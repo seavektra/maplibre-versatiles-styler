@@ -42,11 +42,15 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Create the GitHub release with the bundle
+      # The release may already exist when the tag was created from the GitHub UI's "Draft a new
+      # release" form; then only the bundle is uploaded.
+      - name: Create the GitHub release and upload the bundle
         run: |
-          gh release create "$GITHUB_REF_NAME" \
+          gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1 || gh release create "$GITHUB_REF_NAME" \
             --title "$GITHUB_REF_NAME" \
             --notes "SeaVektra build of maplibre-versatiles-styler. See SEAVEKTRA.md." \
             --prerelease \
+            --verify-tag
+          gh release upload "$GITHUB_REF_NAME" --clobber \
             dist/maplibre-versatiles-styler.js \
             dist/maplibre-versatiles-styler.d.ts

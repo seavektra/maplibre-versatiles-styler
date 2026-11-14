@@ -31,5 +31,5 @@ Also fast-forward `main` to `upstream/main`.
 ## Releasing
 
 1. On `seavektra`, tag `v<upstream version in package.json>-sv.<n>`, starting `<n>` at 1 for each upstream version, e.g. `v3.0.2-sv.1`.
-2. `git push origin <tag>`. The SeaVektra release workflow checks, builds and creates the release.
+2. `git push origin <tag>`, or create the tag in GitHub's "Draft a new release" form with target `seavektra`. The SeaVektra release workflow checks, builds and attaches the bundle to the release.
 3. In ChartManager: `scripts/update-versatiles-styler.sh <tag>`, then commit the vendored file.
