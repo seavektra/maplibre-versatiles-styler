@@ -11,6 +11,8 @@ on:
   push:
     tags:
       - 'v*'
+      # SeaVektra fork: our tags (v<upstream>-sv.<n>) are released by seavektra-release.yml, never to npm.
+      - '!v*-sv.*'
 
 permissions: {}
 
