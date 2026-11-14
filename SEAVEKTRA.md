@@ -10,11 +10,11 @@ ChartManager's admin UI embeds it on the Basemap styler page (`/styling/basemap`
 
 ## Changes from upstream
 
-| Change                                                 | Why                                                                                                                          |
-| ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
+| Change                                                 | Why                                                                                                                                          |
+| ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- |
 | `.github/workflows/seavektra-release.yml`              | Builds a tag `v<upstream version>-sv.<n>` and attaches `dist/maplibre-versatiles-styler.js` (ES module) and its `.d.ts` to a GitHub release. |
-| `.github/workflows/release.yml` ignores `v*-sv.*` tags | Upstream's workflow publishes to npm; our tags must never reach it.                                                          |
-| This file                                              |                                                                                                                              |
+| `.github/workflows/release.yml` ignores `v*-sv.*` tags | Upstream's workflow publishes to npm; our tags must never reach it.                                                                          |
+| This file                                              |                                                                                                                                              |
 
 ## Merging upstream
 
