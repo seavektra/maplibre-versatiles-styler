@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { FontFaceInfo, LayerGroupMap, TextGroupMap } from '@versatiles/style';
 	import { configChangeCount, type VectorState } from '../style/config';
+	import type { LayerZooms } from '../style/zooms';
 	import SidebarSection from './SidebarSection.svelte';
 	import ColorOptions from './sections/ColorOptions.svelte';
 	import RecolorOptions from './sections/RecolorOptions.svelte';
@@ -22,6 +23,8 @@
 		hasLandcover,
 		fontFaces,
 		languages,
+		zooms = $bindable(),
+		zoomDefaults,
 	}: {
 		options: VectorState;
 		defaults: VectorState;
@@ -37,6 +40,9 @@
 		hasLandcover: boolean;
 		fontFaces: Promise<FontFaceInfo[] | undefined>;
 		languages: Record<string, string>;
+		/** The zoom ranges set for layer groups, and the ones the style has as built. */
+		zooms: LayerZooms;
+		zoomDefaults: LayerZooms;
 	} = $props();
 
 	const changes = (...paths: string[]) => configChangeCount(config, paths);
@@ -57,6 +63,7 @@
 		options.layers = structuredClone(defaults.layers);
 		options.features.buildings = defaults.features.buildings;
 		options.features.landcover = defaults.features.landcover;
+		for (const path of Object.keys(zooms)) delete zooms[path];
 	}
 	function resetElevation() {
 		options.features.terrain = defaults.features.terrain;
@@ -74,7 +81,8 @@
 	title="Layers"
 	description="Show, hide or fade groups of map features."
 	onReset={resetLayers}
-	changes={changes('layers', 'features.buildings', 'features.landcover')}
+	changes={changes('layers', 'features.buildings', 'features.landcover') +
+		Object.keys(zooms).length}
 >
 	<InputCheckbox
 		label="3D buildings"
@@ -94,7 +102,13 @@
 		bind:value={options.features.landcover}
 		defaultValue={defaults.features.landcover}
 	/>
-	<LayerOptions bind:layers={options.layers} defaults={defaults.layers} {layerGroups} />
+	<LayerOptions
+		bind:layers={options.layers}
+		defaults={defaults.layers}
+		{layerGroups}
+		bind:zooms
+		{zoomDefaults}
+	/>
 </SidebarSection>
 <h4 class="section-group">Appearance</h4>
 <SidebarSection

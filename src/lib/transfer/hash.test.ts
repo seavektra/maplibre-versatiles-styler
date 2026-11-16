@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { Map as MLGLMap } from 'maplibre-gl';
-import { decodeConfig, encodeConfig, HashManager } from './hash';
+import { decodeConfig, encodeConfig, HashManager, type HashStorage } from './hash';
 
 function createMockMap(overrides: Partial<Record<string, any>> = {}) {
 	return {
@@ -31,6 +31,71 @@ describe('HashManager', () => {
 		vi.useRealTimers();
 		vi.restoreAllMocks();
 		window.location.hash = '';
+	});
+
+	describe('zoom ranges and storage', () => {
+		function memoryStorage(initial: string | null): HashStorage & { saved: string[] } {
+			const saved: string[] = [];
+			return { saved, load: () => initial, save: (hash) => saved.push(hash) };
+		}
+
+		it('restores the stored hash when the page opens without one, and keeps every update', () => {
+			// The real replaceState: it changes the URL without a hashchange, as browsers do.
+			replaceStateSpy.mockRestore();
+			const zooms = encodeConfig({ land: { min: 6 } });
+			const storage = memoryStorage(`#map=6/37.4/-120&style=colorful-dark&zooms=${zooms}`);
+			const hm = new HashManager(
+				createMockMap(),
+				vi.fn(),
+				undefined,
+				undefined,
+				{ onChange: vi.fn() },
+				storage
+			);
+
+			const state = hm.initialize();
+			expect(state.styleKey).toBe('colorful-dark');
+			expect(state.zooms).toBe(zooms);
+			// Events the earlier hash assignments queued go first.
+			vi.advanceTimersByTime(400);
+
+			hm.setZooms(null);
+			vi.advanceTimersByTime(400);
+			expect(storage.saved[storage.saved.length - 1]).not.toContain('zooms=');
+			hm.destroy();
+		});
+
+		it('leaves a hash the page opens with as it is', () => {
+			window.location.hash = '#style=colorful-dark';
+			const storage = memoryStorage('#style=graybeard');
+			const hm = new HashManager(
+				createMockMap(),
+				vi.fn(),
+				undefined,
+				undefined,
+				undefined,
+				storage
+			);
+
+			expect(hm.initialize().styleKey).toBe('colorful-dark');
+		});
+
+		it('writes the zoom ranges into the hash and reports them when the hash changes', () => {
+			const onChange = vi.fn();
+			const hm = new HashManager(createMockMap(), vi.fn(), undefined, undefined, { onChange });
+			hm.initialize();
+			const zooms = encodeConfig({ 'land.forest': { min: 6 } });
+
+			hm.setZooms(zooms);
+			vi.advanceTimersByTime(400);
+			expect(
+				String(replaceStateSpy.mock.calls[replaceStateSpy.mock.calls.length - 1]?.[2])
+			).toContain(`zooms=${zooms}`);
+
+			window.location.hash = '#map=10/51.5/-0.12';
+			window.dispatchEvent(new HashChangeEvent('hashchange'));
+			expect(onChange).toHaveBeenCalledWith(null);
+		});
 	});
 
 	describe('initialize', () => {
