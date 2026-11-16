@@ -173,7 +173,12 @@
 		<span>No layers of this group are in the style.</span>
 	{:else}
 		<table class="group-info">
-			<thead><tr><th>Layer</th><th>Draws</th><th>Zoom</th><th>Fade</th><th>Tiles</th></tr></thead>
+			<thead
+				><tr
+					><th>Style layer</th><th>Tile layer: kinds</th><th>Zoom</th><th>Fade</th><th>Tiles</th
+					></tr
+				></thead
+			>
 			<tbody>
 				{#each summaries as layer (layer.id)}
 					{@const tiles = layer.sourceLayer ? tileZooms[layer.sourceLayer] : undefined}
