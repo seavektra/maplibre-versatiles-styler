@@ -291,6 +291,8 @@
 		defaultVectorStyle ? groupZoomDefaults(defaultVectorStyle, vectorGroups.layerGroups) : {}
 	);
 	/** The zooms each layer group's data is in the tiles at, shown beside its zoom fields. */
+	/** The layers of the vector style on the map, for what each layer group's ⓘ lists. */
+	let styleLayers = $state.raw<StyleSpecification['layers'] | undefined>();
 	let tileZooms = $derived(
 		defaultVectorStyle && vectorTileJSON
 			? groupTileZooms(defaultVectorStyle, vectorGroups.layerGroups, vectorTileJSON)
@@ -404,6 +406,7 @@
 				setStyleOptions(rendered, next.rendered, styleLoaded)
 			);
 			rendered = next.rendered;
+			styleLayers = next.rendered.styleKey === 'satellite' ? undefined : next.style.layers;
 			hashManager?.setConfig(minimal);
 		});
 	});
@@ -823,6 +826,7 @@
 				bind:zooms={layerZooms}
 				{zoomDefaults}
 				{tileZooms}
+				{styleLayers}
 			/>
 		{/if}
 		<!-- The project itself, which is neither the map nor the style: out of the action rows. -->

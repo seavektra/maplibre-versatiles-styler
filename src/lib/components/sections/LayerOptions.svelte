@@ -20,7 +20,14 @@
 	import InputText from '../inputs/InputText.svelte';
 	import InputVisibility from '../inputs/InputVisibility.svelte';
 	import type { SelectOption } from '../inputs/select';
-	import { MAX_ZOOM, MIN_ZOOM, type LayerZooms, type TileZooms } from '../../style/zooms';
+	import {
+		groupLayerSummaries,
+		MAX_ZOOM,
+		MIN_ZOOM,
+		type LayerZooms,
+		type TileZooms,
+	} from '../../style/zooms';
+	import type { StyleSpecification } from 'maplibre-gl';
 
 	let {
 		layers = $bindable(),
@@ -29,6 +36,7 @@
 		zooms = $bindable(),
 		zoomDefaults = {},
 		tileZooms = {},
+		styleLayers,
 		disabled = false,
 	}: {
 		layers: ResolvedLayerGroups;
@@ -41,6 +49,8 @@
 		zoomDefaults?: LayerZooms;
 		/** The zooms each group's data is in the tiles at, by group path. */
 		tileZooms?: Record<string, TileZooms>;
+		/** The layers of the style on the map, for what each group's ⓘ lists. */
+		styleLayers?: StyleSpecification['layers'];
 		disabled?: boolean;
 	} = $props();
 
@@ -53,13 +63,23 @@
 		{ value: 'dashed', label: '╍╍', title: 'Dashed' },
 		{ value: 'custom', label: '✎', title: 'Custom' },
 	];
+
+	/** The zoom a group gets from the nearest of its parents that has one set, if any. */
+	function inheritedZoom(id: string, bound: 'min' | 'max'): number | undefined {
+		const path = id.split('.');
+		for (let length = path.length - 1; length > 0; length--) {
+			const zoom = zooms?.[path.slice(0, length).join('.')]?.[bound];
+			if (zoom !== undefined) return zoom;
+		}
+		return undefined;
+	}
 </script>
 
-<!-- The zooms a group is drawn at: from Min zoom, hidden from Max zoom on. Empty is the style's own. -->
+<!-- The zooms a group is drawn at: from Min zoom, hidden from Max zoom on. Empty is a parent's, or else the style's own. -->
 {#snippet zoomRange(id: string)}
 	{#if zooms}
 		{#each ['min', 'max'] as const as bound (bound)}
-			{@const usual = zoomDefaults[id]?.[bound]}
+			{@const usual = inheritedZoom(id, bound) ?? zoomDefaults[id]?.[bound]}
 			<InputNumber
 				label={bound === 'min' ? 'Min zoom' : 'Max zoom'}
 				hint={bound === 'min'
@@ -152,13 +172,39 @@
 	{/if}
 {/snippet}
 
+<!-- What a group holds: each of its map layers, what it draws, its zooms and its fade. -->
+{#snippet groupInfo(id: string)}
+	{@const summaries = styleLayers
+		? groupLayerSummaries({ layers: styleLayers }, layerGroups, id)
+		: []}
+	{#if summaries.length === 0}
+		<span>No layers of this group are in the style.</span>
+	{:else}
+		<table class="group-info">
+			<thead><tr><th>Layer</th><th>Draws</th><th>Zoom</th><th>Fade</th></tr></thead>
+			<tbody>
+				{#each summaries as layer (layer.id)}
+					<tr>
+						<td>{layer.id}</td>
+						<td>{layer.sourceLayer ?? ''}{layer.kinds ? `: ${layer.kinds.join(', ')}` : ''}</td>
+						<td>{layer.min ?? 0}–{layer.max ?? '∞'}</td>
+						<td>{layer.fade ? `${layer.fade[0]}→${layer.fade[1]}` : '—'}</td>
+					</tr>
+				{/each}
+			</tbody>
+		</table>
+	{/if}
+{/snippet}
+
 {#snippet tree(list: LayerNode[])}
 	{#each list as node (node.key)}
 		{@const id = node.path.join('.')}
 		{@const hasChildren = node.children.length > 0}
 		{@const expandable = hasChildren || node.line || zooms !== undefined}
+		{#snippet info()}{@render groupInfo(id)}{/snippet}
 		<InputVisibility
 			label={node.label}
+			hint={styleLayers ? info : undefined}
 			name={id}
 			{disabled}
 			value={layerValue(layers, node)}
@@ -174,7 +220,7 @@
 			onToggle={expandable ? () => (expanded[id] = !(expanded[id] ?? false)) : undefined}
 		/>
 		{#if expandable && expanded[id]}
-			<div class="nested">
+			<div class="nested group-body">
 				{@render zoomRange(id)}
 				{#if hasChildren}
 					{@render tree(node.children)}

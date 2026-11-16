@@ -3,6 +3,7 @@ import type { LayerGroupMap } from '@versatiles/style';
 import type { StyleSpecification } from 'maplibre-gl';
 import {
 	applyLayerZooms,
+	groupLayerSummaries,
 	groupTileZooms,
 	groupZoomDefaults,
 	layerIdsOfGroup,
@@ -165,5 +166,40 @@ describe('groupTileZooms', () => {
 
 	it('leaves out groups whose tile layers the tiles do not list', () => {
 		expect(groupTileZooms(style, groups, { vector_layers: [] })).toEqual({});
+	});
+});
+
+describe('groupLayerSummaries', () => {
+	it('lists what each layer of a group draws, its zooms and its fade', () => {
+		const summaries = groupLayerSummaries(
+			{
+				layers: [
+					{
+						id: 'land-forest',
+						type: 'fill',
+						source: 'osm',
+						'source-layer': 'land',
+						minzoom: 6,
+						filter: ['in', ['get', 'kind'], ['literal', ['forest', 'wood']]],
+						paint: { 'fill-opacity': ['interpolate', ['linear'], ['zoom'], 6, 0, 7, 1] },
+					},
+					{
+						id: 'land-residential',
+						type: 'fill',
+						source: 'osm',
+						'source-layer': 'land',
+						maxzoom: 14,
+						filter: ['==', ['get', 'kind'], 'residential'],
+					},
+					{ id: 'water-ocean', type: 'fill', source: 'osm', 'source-layer': 'ocean' },
+				],
+			},
+			groups,
+			'land'
+		);
+		expect(summaries).toEqual([
+			{ id: 'land-forest', sourceLayer: 'land', kinds: ['forest', 'wood'], min: 6, fade: [6, 7] },
+			{ id: 'land-residential', sourceLayer: 'land', kinds: ['residential'], max: 14 },
+		]);
 	});
 });

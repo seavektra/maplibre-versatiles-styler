@@ -2,6 +2,7 @@
 	import type { FontFaceInfo, LayerGroupMap, TextGroupMap } from '@versatiles/style';
 	import { configChangeCount, type VectorState } from '../style/config';
 	import type { LayerZooms, TileZooms } from '../style/zooms';
+	import type { StyleSpecification } from 'maplibre-gl';
 	import SidebarSection from './SidebarSection.svelte';
 	import ColorOptions from './sections/ColorOptions.svelte';
 	import RecolorOptions from './sections/RecolorOptions.svelte';
@@ -26,6 +27,7 @@
 		zooms = $bindable(),
 		zoomDefaults,
 		tileZooms = {},
+		styleLayers,
 	}: {
 		options: VectorState;
 		defaults: VectorState;
@@ -46,6 +48,8 @@
 		zoomDefaults: LayerZooms;
 		/** The zooms each group's data is in the tiles at. */
 		tileZooms?: Record<string, TileZooms>;
+		/** The layers of the style on the map. */
+		styleLayers?: StyleSpecification['layers'];
 	} = $props();
 
 	const changes = (...paths: string[]) => configChangeCount(config, paths);
@@ -112,6 +116,7 @@
 		bind:zooms
 		{zoomDefaults}
 		{tileZooms}
+		{styleLayers}
 	/>
 </SidebarSection>
 <h4 class="section-group">Appearance</h4>

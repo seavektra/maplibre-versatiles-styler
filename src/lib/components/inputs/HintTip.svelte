@@ -4,9 +4,10 @@
 </script>
 
 <script lang="ts">
+	import type { Snippet } from 'svelte';
 	import { portalToMap } from './popover';
 
-	let { label, hint }: { label: string; hint: string } = $props();
+	let { label, hint }: { label: string; hint: string | Snippet } = $props();
 
 	const uid = $props.id();
 
@@ -125,7 +126,7 @@
 			onpointerleave={(e) => hover(e, false)}
 			{@attach place}
 		>
-			{hint}
+			{#if typeof hint === 'string'}{hint}{:else}{@render hint()}{/if}
 		</div>
 	</div>
 {/if}

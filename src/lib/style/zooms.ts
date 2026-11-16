@@ -238,3 +238,74 @@ function groupPaths(groups: LayerGroupMap): string[] {
 	visit(groups, []);
 	return paths;
 }
+
+/** What a map layer of a group draws and at which zooms, as a group's ⓘ lists it. */
+export interface LayerSummary {
+	id: string;
+	/** The tile layer it reads, and the `kind`s it keeps of it, if it keeps only some. */
+	sourceLayer?: string;
+	kinds?: string[];
+	min?: number;
+	max?: number;
+	/** The zooms its opacity fades in over, from 0 to full. */
+	fade?: [number, number];
+}
+
+/** A summary of each of the group's layers in the style, in the style's order. */
+export function groupLayerSummaries(
+	style: Pick<StyleSpecification, 'layers'>,
+	groups: LayerGroupMap,
+	path: string
+): LayerSummary[] {
+	const ids = new Set(layerIdsOfGroup(groups, path));
+	return style.layers.filter((layer) => ids.has(layer.id)).map(summarizeLayer);
+}
+
+function summarizeLayer(layer: StyleSpecification['layers'][number]): LayerSummary {
+	const summary: LayerSummary = { id: layer.id };
+	if ('source-layer' in layer && typeof layer['source-layer'] === 'string') {
+		summary.sourceLayer = layer['source-layer'];
+	}
+	const kinds = 'filter' in layer ? kindsOf(layer.filter) : undefined;
+	if (kinds) summary.kinds = kinds;
+	if (layer.minzoom !== undefined) summary.min = layer.minzoom;
+	if (layer.maxzoom !== undefined) summary.max = layer.maxzoom;
+	const paint = ('paint' in layer ? layer.paint : undefined) as Record<string, unknown> | undefined;
+	for (const [key, value] of Object.entries(paint ?? {})) {
+		const fade = key.endsWith('-opacity') ? fadeOf(value) : undefined;
+		if (fade) {
+			summary.fade = fade;
+			break;
+		}
+	}
+	return summary;
+}
+
+/** The `kind`s a filter keeps: `["==", ["get", "kind"], k]` or `["in", ["get", "kind"], ["literal", [...]]]`, also inside an `all`. */
+function kindsOf(filter: unknown): string[] | undefined {
+	if (!Array.isArray(filter)) return undefined;
+	if (filter[0] === 'all') {
+		for (const part of filter.slice(1)) {
+			const kinds = kindsOf(part);
+			if (kinds) return kinds;
+		}
+		return undefined;
+	}
+	const isKind = (v: unknown) => Array.isArray(v) && v[0] === 'get' && v[1] === 'kind';
+	if (filter[0] === '==' && isKind(filter[1]) && typeof filter[2] === 'string') return [filter[2]];
+	if (filter[0] === 'in' && isKind(filter[1])) {
+		const list = Array.isArray(filter[2]) && filter[2][0] === 'literal' ? filter[2][1] : undefined;
+		if (Array.isArray(list) && list.every((k) => typeof k === 'string')) return list as string[];
+	}
+	return undefined;
+}
+
+/** The zooms an opacity fades in over: the first two stops of a zoom interpolation from 0. */
+function fadeOf(value: unknown): [number, number] | undefined {
+	if (!Array.isArray(value) || value[0] !== 'interpolate') return undefined;
+	const input = value[2];
+	if (!Array.isArray(input) || input[0] !== 'zoom') return undefined;
+	const [z0, v0, z1] = value.slice(3);
+	if (typeof z0 !== 'number' || v0 !== 0 || typeof z1 !== 'number') return undefined;
+	return [z0, z1];
+}
