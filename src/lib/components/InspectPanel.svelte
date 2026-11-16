@@ -83,11 +83,15 @@
 	}
 
 	/** A feature by what tells it apart best: its kind and its name. */
-	function featureTitle(feature: TileFeature): string {
+	/** Its kind and name, or nothing when it has neither, such as the ocean. */
+	function featureName(feature: TileFeature): string {
 		const { kind, class: klass, subclass, name } = feature.properties;
 		const what = [kind ?? klass, subclass].filter((v) => v !== undefined && v !== '').join(' / ');
-		const title = [what, name].filter((v) => v !== undefined && v !== '').join(' · ');
-		return title || 'feature';
+		return [what, name].filter((v) => v !== undefined && v !== '').join(' · ');
+	}
+
+	function featureTitle(feature: TileFeature): string {
+		return featureName(feature) || 'feature';
 	}
 
 	function zoomText(min?: number, max?: number): string {
@@ -136,15 +140,20 @@
 </div>
 
 {#snippet tileLayer(hits: TileLayerHits)}
+	<!-- One drawn feature is named in the tile layer's heading rather than on a line of its own. -->
+	{@const single = hits.drawn.length === 1}
+	{@const singleName = single ? featureName(hits.drawn[0]) : ''}
 	<section class="inspect-tile-layer">
 		<p class="inspect-tile-head">
-			<span>Tile layer <code>{hits.sourceLayer}</code></span>
+			<span
+				>Tile layer <code>{hits.sourceLayer}</code>{#if singleName}: {singleName}{/if}</span
+			>
 			{#if hits.tiles}<span class="inspect-tiles">in tiles z{hits.tiles.min}–{hits.tiles.max}</span
 				>{/if}
 		</p>
 		{#each hits.drawn as feature, index (index)}
 			<div class="inspect-feature">
-				<p class="inspect-feature-title">{featureTitle(feature)}</p>
+				{#if !single}<p class="inspect-feature-title">{featureTitle(feature)}</p>{/if}
 				{@render properties(feature)}
 				{#each feature.layers as layer (layer.id)}
 					{@render styleLayer(layer)}
