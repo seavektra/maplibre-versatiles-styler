@@ -79,13 +79,55 @@ export function applyLayerZooms(
 		layers: style.layers.map((layer) => {
 			const range = byLayer.get(layer.id);
 			if (!range) return layer;
+			const paint =
+				range.min !== undefined && 'paint' in layer && layer.paint
+					? { paint: fadeInBy(layer.paint as Record<string, unknown>, layer.minzoom, range.min) }
+					: {};
 			return {
 				...layer,
+				...paint,
 				...(range.min !== undefined ? { minzoom: range.min } : {}),
 				...(range.max !== undefined ? { maxzoom: range.max } : {}),
 			};
 		}),
 	};
+}
+
+/**
+ * The paint with every opacity that fades in from 0 by zoom moved by as much as the layer's min zoom
+ * moved: forest drawn from z6 instead of z7 fades in over z6→7 instead of z7→8. Where the layer
+ * itself has no `minzoom`, it starts where its fade starts.
+ */
+function fadeInBy(
+	paint: Record<string, unknown>,
+	ownMin: number | undefined,
+	min: number
+): Record<string, unknown> {
+	let changed = false;
+	const result: Record<string, unknown> = {};
+	for (const [key, value] of Object.entries(paint)) {
+		const moved = key.endsWith('-opacity') ? movedFadeIn(value, ownMin, min) : undefined;
+		result[key] = moved ?? value;
+		if (moved) changed = true;
+	}
+	return changed ? result : paint;
+}
+
+/** A `["interpolate", …, ["zoom"], z0, 0, z1, v1, …]` with its stops moved by `min - start`. */
+function movedFadeIn(
+	value: unknown,
+	ownMin: number | undefined,
+	min: number
+): unknown[] | undefined {
+	if (!Array.isArray(value) || value[0] !== 'interpolate') return undefined;
+	const input = value[2];
+	if (!Array.isArray(input) || input[0] !== 'zoom' || value.length < 7) return undefined;
+	const stops = value.slice(3);
+	if (stops.length % 2 !== 0 || stops[1] !== 0) return undefined;
+	if (!stops.every((v, i) => i % 2 === 1 || typeof v === 'number')) return undefined;
+	const shift = min - (ownMin ?? (stops[0] as number));
+	if (shift === 0) return undefined;
+	return [...value.slice(0, 3), ...stops.map((v, i) => (i % 2 === 0 ? (v as number) + shift : v))];
 }
 
 function definedOf(range: ZoomRange): ZoomRange {

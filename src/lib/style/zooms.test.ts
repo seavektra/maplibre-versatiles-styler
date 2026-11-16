@@ -36,6 +36,69 @@ describe('layerIdsOfGroup', () => {
 });
 
 describe('applyLayerZooms', () => {
+	it('moves a fade-in by as much as the min zoom moved', () => {
+		const fading: StyleSpecification = {
+			...style,
+			layers: [
+				{
+					id: 'land-forest',
+					type: 'fill',
+					source: 'osm',
+					'source-layer': 'land',
+					paint: {
+						'fill-color': '#0f0',
+						'fill-opacity': ['interpolate', ['linear'], ['zoom'], 7, 0, 8, 1],
+					},
+				},
+				{
+					id: 'water-ocean',
+					type: 'fill',
+					source: 'osm',
+					'source-layer': 'ocean',
+					paint: { 'fill-opacity': ['interpolate', ['linear'], ['zoom'], 4, 0, 5, 1] },
+				},
+			],
+		};
+		const result = applyLayerZooms(fading, { land: { min: 6 }, water: { min: 6 } }, groups);
+		const paintOf = (id: string) =>
+			(result.layers.find((l) => l.id === id) as { paint: Record<string, unknown> }).paint;
+		expect(paintOf('land-forest')['fill-opacity']).toEqual([
+			'interpolate',
+			['linear'],
+			['zoom'],
+			6,
+			0,
+			7,
+			1,
+		]);
+		expect(paintOf('land-forest')['fill-color']).toBe('#0f0');
+		// Starting at z4, a min zoom of 6 moves its fade up by 2.
+		expect(paintOf('water-ocean')['fill-opacity']).toEqual([
+			'interpolate',
+			['linear'],
+			['zoom'],
+			6,
+			0,
+			7,
+			1,
+		]);
+		// A layer with its own minzoom moves by the difference to it.
+		const own = applyLayerZooms(
+			{ ...fading, layers: [{ ...fading.layers[0], minzoom: 8 } as (typeof fading.layers)[0]] },
+			{ land: { min: 6 } },
+			groups
+		);
+		expect((own.layers[0] as { paint: Record<string, unknown> }).paint['fill-opacity']).toEqual([
+			'interpolate',
+			['linear'],
+			['zoom'],
+			5,
+			0,
+			6,
+			1,
+		]);
+	});
+
 	it('sets a group range on all its layers, with a sub-group range over its parent', () => {
 		const result = applyLayerZooms(style, { 'land.forest': { max: 12 }, land: { min: 6 } }, groups);
 		expect(zoomsOf(result)).toEqual({
