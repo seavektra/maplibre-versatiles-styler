@@ -52,6 +52,8 @@
 	import { registerPMTiles } from '../style/pmtiles';
 	import { languageOptions } from '../options/languages';
 	import { onDestroy, untrack } from 'svelte';
+	import { SvelteSet } from 'svelte/reactivity';
+	import { highlightGeometry, setStyleLayerShown } from '../style/inspect_overlay';
 	import { decodeConfig, encodeConfig, HashManager, localHashStorage } from '../transfer/hash';
 	import {
 		applyLayerZooms,
@@ -469,6 +471,29 @@
 		};
 	});
 
+	/** Style layers the inspector has switched off on the map, to see what the others paint. */
+	const hiddenStyleLayers = new SvelteSet<string>();
+
+	function toggleStyleLayer(id: string) {
+		const hide = !hiddenStyleLayers.has(id);
+		setStyleLayerShown(map, id, !hide);
+		if (hide) hiddenStyleLayers.add(id);
+		else hiddenStyleLayers.delete(id);
+	}
+
+	/** Back to the style as built: every switched-off layer on again, no outline. */
+	function resetInspectorView() {
+		for (const id of hiddenStyleLayers) setStyleLayerShown(map, id, true);
+		hiddenStyleLayers.clear();
+		highlightGeometry(map, undefined);
+	}
+
+	// A rebuilt style comes with all its layers on.
+	$effect(() => {
+		void styleLayers;
+		untrack(() => hiddenStyleLayers.clear());
+	});
+
 	$effect(() => {
 		if (!inspectOn) return;
 		const canvas = map.getCanvas();
@@ -495,6 +520,7 @@
 			map.off('click', handler);
 			canvas.style.cursor = hostCursor;
 			inspectResult = undefined;
+			resetInspectorView();
 		};
 	});
 
@@ -867,6 +893,12 @@
 		layers={inspectTargets.layers}
 		layerDefaults={inspectTargets.layerDefaults}
 		layerGroups={inspectTargets.layerGroups}
-		onclose={() => (inspectResult = undefined)}
+		{hiddenStyleLayers}
+		ontogglestylelayer={toggleStyleLayer}
+		onhighlight={(geometry) => highlightGeometry(map, geometry)}
+		onclose={() => {
+			inspectResult = undefined;
+			resetInspectorView();
+		}}
 	/>
 {/if}

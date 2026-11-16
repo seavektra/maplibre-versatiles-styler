@@ -2,6 +2,7 @@
 	import type { LayerGroupMap, ResolvedColors, ResolvedLayerGroups } from '@versatiles/style';
 	import { pathLabel, type InspectedLayer } from '../style/inspect';
 	import type {
+		Geometry,
 		InspectClick,
 		TileFeature,
 		TileLayerHits,
@@ -29,6 +30,9 @@
 		layers,
 		layerDefaults,
 		layerGroups,
+		hiddenStyleLayers,
+		ontogglestylelayer,
+		onhighlight,
 		onclose,
 	}: {
 		/** What one click found, described when it happened. */
@@ -44,6 +48,11 @@
 		layers?: ResolvedLayerGroups;
 		layerDefaults?: ResolvedLayerGroups;
 		layerGroups?: LayerGroupMap;
+		/** Style layers switched off on the map from the panel; only for viewing, never saved. */
+		hiddenStyleLayers: ReadonlySet<string>;
+		ontogglestylelayer: (id: string) => void;
+		/** Outlines a feature on the map while the pointer is on it in the panel; `undefined` clears. */
+		onhighlight: (geometry: Geometry | undefined) => void;
 		onclose: () => void;
 	} = $props();
 
@@ -55,6 +64,18 @@
 		return labels.every((label) => label !== undefined)
 			? pathLabel(labels as string[])
 			: pathLabel(path);
+	}
+
+	/** A feature's style layers by layer group, in the order the map draws them, topmost first. */
+	function byGroup(layers: readonly InspectedLayer[]) {
+		const groups: { key: string; group?: string[]; layers: InspectedLayer[] }[] = [];
+		for (const layer of layers) {
+			const key = layer.group ? layer.group.join('/') : `:${layer.id}`;
+			const found = groups.find((candidate) => candidate.key === key);
+			if (found) found.layers.push(layer);
+			else groups.push({ key, group: layer.group, layers: [layer] });
+		}
+		return groups;
 	}
 
 	/**
@@ -157,11 +178,16 @@
 				>{/if}
 		</p>
 		{#each hits.drawn as feature, index (index)}
-			<div class="inspect-feature">
+			<div
+				class="inspect-feature"
+				role="group"
+				onpointerenter={() => onhighlight(feature.geometry)}
+				onpointerleave={() => onhighlight(undefined)}
+			>
 				{#if !single}<p class="inspect-feature-title">{featureTitle(feature)}</p>{/if}
 				{@render properties(feature)}
-				{#each feature.layers as layer (layer.id)}
-					{@render styleLayer(layer)}
+				{#each byGroup(feature.layers) as entry (entry.key)}
+					{@render layerGroup(entry.group, entry.layers)}
 				{/each}
 			</div>
 		{/each}
@@ -169,7 +195,12 @@
 			<details class="inspect-undrawn" open={hits.drawn.length === 0}>
 				<summary>Not drawn ({hits.undrawn.length})</summary>
 				{#each hits.undrawn as feature, index (index)}
-					<div class="inspect-feature">
+					<div
+						class="inspect-feature"
+						role="group"
+						onpointerenter={() => onhighlight(feature.geometry)}
+						onpointerleave={() => onhighlight(undefined)}
+					>
 						<p class="inspect-feature-title">{featureTitle(feature)}</p>
 						<p class="inspect-note">{reasonText(feature.reason)}</p>
 						{@render properties(feature)}
@@ -195,24 +226,15 @@
 	{/if}
 {/snippet}
 
-{#snippet styleLayer(layer: InspectedLayer)}
-	{@const node = layer.group ? findLayerNode(nodes, layer.group) : undefined}
-	<div class="inspect-item">
-		<p class="inspect-title">
-			{layer.group ? groupLabel(layer.group) : layer.id}
-		</p>
-		<p class="inspect-meta">
-			<code>{layer.id}</code>
-			<span>{layer.type}</span>
-			<span>{zoomText(layer.min, layer.max)}</span>
-			{#if layer.fade}<span>fade {layer.fade[0]}→{layer.fade[1]}</span>{/if}
-		</p>
-		{#if layer.filter !== undefined}
-			<p class="inspect-filter"><span>Filter</span> <code>{filterText(layer.filter)}</code></p>
+{#snippet layerGroup(group: string[] | undefined, groupLayers: InspectedLayer[])}
+	{@const node = group ? findLayerNode(nodes, group) : undefined}
+	<div class="inspect-group">
+		{#if group}
+			<p class="inspect-title">{groupLabel(group)}</p>
 		{/if}
 		<!-- The rows come from the sections, and their styles hang off the list class those use. -->
-		<div class="maplibregl-list">
-			{#if node && layers && layerDefaults}
+		{#if node && layers && layerDefaults}
+			<div class="maplibregl-list">
 				<InputVisibility
 					label={node.label}
 					name="layer group"
@@ -221,21 +243,54 @@
 					onchange={(value) => setLayerValue(layers, node, value)}
 					onReset={() => resetLayer(layers, layerDefaults, node)}
 				/>
+			</div>
+		{/if}
+		{#each groupLayers as layer (layer.id)}
+			{@render styleLayer(layer)}
+		{/each}
+	</div>
+{/snippet}
+
+{#snippet styleLayer(layer: InspectedLayer)}
+	{@const hidden = hiddenStyleLayers.has(layer.id)}
+	<div class="inspect-item" class:off={hidden}>
+		<p class="inspect-meta">
+			<button
+				type="button"
+				class="inspect-eye"
+				aria-pressed={hidden}
+				aria-label="Hide style layer {layer.id} on the map"
+				title={hidden
+					? `Show ${layer.id} again`
+					: `Hide ${layer.id} on the map, to see what the others paint (not saved)`}
+				onclick={() => ontogglestylelayer(layer.id)}
+			></button>
+			<code>{layer.id}</code>
+			<span>{layer.type}</span>
+			<span>{zoomText(layer.min, layer.max)}</span>
+			{#if layer.fade}<span>fade {layer.fade[0]}→{layer.fade[1]}</span>{/if}
+		</p>
+		{#if layer.filter !== undefined}
+			<p class="inspect-filter"><span>Filter</span> <code>{filterText(layer.filter)}</code></p>
+		{/if}
+		{#if colors && colorDefaults}
+			{@const rows = colorRows(layer)}
+			{#if rows.length > 0}
+				<div class="maplibregl-list">
+					{#each rows as row (row.key)}
+						<InputColor
+							label={colorLabel(row.key)}
+							name={row.properties.join(', ')}
+							bind:value={
+								() => colors[row.key as keyof ResolvedColors],
+								(value) => (colors[row.key as keyof ResolvedColors] = value)
+							}
+							defaultValue={colorDefaults[row.key as keyof ResolvedColors]}
+						/>
+					{/each}
+				</div>
 			{/if}
-			{#if colors && colorDefaults}
-				{#each colorRows(layer) as row (row.key)}
-					<InputColor
-						label={colorLabel(row.key)}
-						name={row.properties.join(', ')}
-						bind:value={
-							() => colors[row.key as keyof ResolvedColors],
-							(value) => (colors[row.key as keyof ResolvedColors] = value)
-						}
-						defaultValue={colorDefaults[row.key as keyof ResolvedColors]}
-					/>
-				{/each}
-			{/if}
-		</div>
+		{/if}
 		{#if layer.topic}
 			<p class="inspect-note">
 				Its text follows <strong>{pathLabel(layer.topic)}</strong> in Labels.

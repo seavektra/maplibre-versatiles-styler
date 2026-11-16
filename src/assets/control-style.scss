@@ -1594,7 +1594,6 @@ $chevron-down: "%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E
 			font-weight: 600;
 		}
 
-		// The layer as the style names it: the identity to search for in an exported style.json.
 		// Why the style layer draws this feature, under its id.
 		.inspect-filter {
 			margin: -4px 0 6px;
@@ -1608,6 +1607,57 @@ $chevron-down: "%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E
 			}
 		}
 
+		// A layer group that draws the feature: its name and visibility once, then its style layers.
+		.inspect-properties + .inspect-group {
+			margin-top: 6px;
+		}
+
+		.inspect-group + .inspect-group {
+			margin-top: 10px;
+			padding-top: 10px;
+			border-top: 1px solid var(--line);
+		}
+
+		.inspect-group .inspect-item {
+			margin-top: 6px;
+			padding-left: 8px;
+			border-left: 1px dotted var(--line);
+		}
+
+		.inspect-group .inspect-item + .inspect-item {
+			padding-top: 0;
+			border-top: none;
+		}
+
+		// Switches one style layer off on the map, only to look.
+		.inspect-eye {
+			display: inline-flex;
+			align-self: center;
+			padding: 0;
+			border: 0;
+			background: none;
+			color: var(--muted);
+			cursor: pointer;
+
+			&::before {
+				@include icon($eye, 14px);
+			}
+
+			&[aria-pressed='true']::before {
+				mask-image: url('data:image/svg+xml,#{$eye-off}');
+			}
+
+			&:hover {
+				color: var(--ink);
+			}
+		}
+
+		.inspect-item.off .inspect-meta code {
+			text-decoration: line-through;
+			opacity: 0.6;
+		}
+
+		// The layer as the style names it: the identity to search for in an exported style.json.
 		.inspect-meta {
 			display: flex;
 			flex-wrap: wrap;

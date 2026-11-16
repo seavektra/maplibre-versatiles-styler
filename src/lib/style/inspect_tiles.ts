@@ -25,6 +25,8 @@ export interface TileFeature {
 	sourceLayer: string;
 	id?: string | number;
 	properties: Record<string, unknown>;
+	/** Its shape in longitude and latitude, as far as the loaded tiles hold it; for highlighting. */
+	geometry?: Geometry;
 }
 
 /** A tile feature the style draws, and the style layers that draw it, topmost first. */
@@ -460,6 +462,7 @@ export function undrawnReason(
 export interface RenderedTileFeature extends RenderedFeature {
 	id?: string | number;
 	source?: string;
+	geometry?: Geometry;
 }
 
 /** A feature as `querySourceFeatures` reports it. */
@@ -512,6 +515,7 @@ export function inspectClick(
 				sourceLayer: feature.sourceLayer ?? '',
 				id: feature.id,
 				properties: feature.properties ?? {},
+				geometry: feature.geometry,
 			},
 			layer: {
 				...layer,
@@ -574,7 +578,7 @@ export function inspectClick(
 					(id) => groupOf(context.indexes.groups, id)
 				);
 				const list = undrawn.get(sourceLayer) ?? [];
-				list.push({ ...feature, reason });
+				list.push({ ...feature, geometry: found.geometry, reason });
 				undrawn.set(sourceLayer, list);
 			}
 		}
