@@ -1625,6 +1625,7 @@ $chevron-down: "%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E
 		}
 
 		.inspect-group .inspect-item + .inspect-item {
+			margin-top: 14px;
 			padding-top: 0;
 			border-top: none;
 		}
