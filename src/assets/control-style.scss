@@ -1373,16 +1373,26 @@ $chevron-down: "%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E
 		text-align: left;
 		box-shadow: 0 4px 14px rgba(16, 24, 40, 0.25);
 
+		// Scrolls when the hint is taller than the room by its ⓘ; the arrow stays outside it.
+		.hint-tip-body {
+			overflow: auto;
+			overscroll-behavior: contain;
+		}
+
 		// A layer group's map layers: what each draws, its zooms and its fade.
 		.group-info {
 			border-collapse: collapse;
 			font-size: 13px;
 
+			// Stays in view while a long table scrolls.
 			th {
+				position: sticky;
+				top: 0;
 				padding: 0 10px 3px 0;
+				background: var(--ink);
 				font-weight: 600;
 				text-align: left;
-				opacity: 0.7;
+				color: color-mix(in srgb, var(--bg) 70%, var(--ink));
 			}
 
 			td {

@@ -69,11 +69,22 @@
 			// A table, such as a layer group's layers, may reach out over the map.
 			const max = (wide ? window.innerWidth : Math.min(window.innerWidth, pane.right)) - margin;
 			tip.style.maxWidth = `${max - min}px`;
+			// A long hint scrolls within the window, on the side of the ⓘ that has more room.
+			const body = tip.querySelector<HTMLElement>('.hint-tip-body');
+			const scrollTop = body?.scrollTop ?? 0;
+			if (body) body.style.maxHeight = '';
+			const roomBelow = window.innerHeight - margin - (rect.bottom + gap);
+			const roomAbove = rect.top - gap - margin;
+			const below = tip.offsetHeight <= roomBelow || roomBelow >= roomAbove;
+			if (body) {
+				const padding = tip.offsetHeight - body.offsetHeight;
+				body.style.maxHeight = `${Math.max(40, (below ? roomBelow : roomAbove) - padding)}px`;
+				body.scrollTop = scrollTop;
+			}
 			const center = rect.left + rect.width / 2;
 			const width = tip.offsetWidth;
 			const height = tip.offsetHeight;
 			const left = Math.max(min, Math.min(center - 20, max - width));
-			const below = rect.bottom + gap + height <= window.innerHeight - margin;
 			tip.style.left = `${left}px`;
 			tip.style.top = `${below ? rect.bottom + gap : rect.top - gap - height}px`;
 			tip.style.setProperty('--arrow', `${Math.max(10, Math.min(center - left, width - 10))}px`);
@@ -94,12 +105,16 @@
 		};
 		document.addEventListener('pointerdown', closeOutside, true);
 		document.addEventListener('keydown', handleEscape);
-		window.addEventListener('scroll', update, true);
+		// Scrolling the hint itself moves nothing.
+		const onScroll = (event: Event) => {
+			if (!tip.contains(event.target as Node)) update();
+		};
+		window.addEventListener('scroll', onScroll, true);
 		window.addEventListener('resize', update);
 		return () => {
 			document.removeEventListener('pointerdown', closeOutside, true);
 			document.removeEventListener('keydown', handleEscape);
-			window.removeEventListener('scroll', update, true);
+			window.removeEventListener('scroll', onScroll, true);
 			window.removeEventListener('resize', update);
 		};
 	}
@@ -128,7 +143,9 @@
 			onpointerleave={(e) => hover(e, false)}
 			{@attach place}
 		>
-			{#if typeof hint === 'string'}{hint}{:else}{@render hint()}{/if}
+			<div class="hint-tip-body">
+				{#if typeof hint === 'string'}{hint}{:else}{@render hint()}{/if}
+			</div>
 		</div>
 	</div>
 {/if}
