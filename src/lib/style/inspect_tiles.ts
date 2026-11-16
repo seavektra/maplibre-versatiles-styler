@@ -8,7 +8,14 @@
  * apart from the drawn ones by its tile layer and properties.
  */
 import type { StyleSpecification } from 'maplibre-gl';
-import { pathLabel, type InspectedLayer } from './inspect';
+import {
+	describeFeatures,
+	groupOf,
+	pathLabel,
+	type InspectedLayer,
+	type InspectIndexes,
+	type RenderedFeature,
+} from './inspect';
 import { summarizeLayer, type LayerSummary, type ZoomSpan } from './zooms';
 
 type StyleLayer = StyleSpecification['layers'][number];
@@ -47,6 +54,13 @@ export interface TileLayerHits {
 	tiles?: ZoomSpan;
 	drawn: DrawnFeature[];
 	undrawn: UndrawnFeature[];
+}
+
+/** What a click found, by tile layer (topmost drawn first), and where. */
+export interface InspectClick {
+	tileLayers: TileLayerHits[];
+	zoom: number;
+	lngLat: { lng: number; lat: number };
 }
 
 /** Tells two reports of the same feature apart from other features: by tile layer, id and properties. */
@@ -217,6 +231,17 @@ function compare(op: string, left: unknown, right: unknown): boolean {
 	}
 }
 
+/**
+ * How near a click a line or a point has to be to be hit, in CSS pixels. The map is asked for what it
+ * draws within `HIT_TOLERANCE` of the click; the tiles are searched within `SOURCE_TOLERANCE`, which
+ * leaves room for the width a line is drawn with; and a feature counts as drawn when the map draws it
+ * anywhere within `DRAWN_TOLERANCE`, so that a line found in the tiles next to the click is not said
+ * to be missing because its stroke stops a pixel short of the box.
+ */
+export const HIT_TOLERANCE = 4;
+export const SOURCE_TOLERANCE = 8;
+const DRAWN_TOLERANCE = 16;
+
 /** A point on the screen, in CSS pixels. */
 export interface ScreenPoint {
 	x: number;
@@ -237,7 +262,7 @@ export function hitsPoint(
 	geometry: Geometry,
 	point: ScreenPoint,
 	project: (lngLat: [number, number]) => ScreenPoint,
-	tolerance = 4
+	tolerance = HIT_TOLERANCE
 ): boolean {
 	const ring = (coordinates: unknown) => (coordinates as [number, number][]).map(project);
 	switch (geometry.type) {
@@ -253,11 +278,12 @@ export function hitsPoint(
 			return (geometry.coordinates as unknown[]).some((line) =>
 				nearLine(ring(line), point, tolerance)
 			);
+		// A polygon also counts when the click is just outside its edge, as the map's own query does.
 		case 'Polygon':
-			return inPolygon((geometry.coordinates as unknown[]).map(ring), point);
+			return nearPolygon((geometry.coordinates as unknown[]).map(ring), point, tolerance);
 		case 'MultiPolygon':
 			return (geometry.coordinates as unknown[][]).some((polygon) =>
-				inPolygon(polygon.map(ring), point)
+				nearPolygon(polygon.map(ring), point, tolerance)
 			);
 		default:
 			return false;
@@ -282,6 +308,10 @@ function segmentDistance(a: ScreenPoint, b: ScreenPoint, p: ScreenPoint): number
 	const t =
 		length === 0 ? 0 : Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / length));
 	return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
+}
+
+function nearPolygon(rings: ScreenPoint[][], p: ScreenPoint, tolerance: number): boolean {
+	return inPolygon(rings, p) || rings.some((ring) => nearLine(ring, p, tolerance));
 }
 
 /** Even-odd: inside the outer ring and outside its holes. */
@@ -343,4 +373,135 @@ export function undrawnReason(
 		),
 	];
 	return groups.length > 0 ? { kind: 'hidden', groups } : { kind: 'unstyled' };
+}
+
+/** A feature as `queryRenderedFeatures` reports it, with the style layer that drew it. */
+export interface RenderedTileFeature extends RenderedFeature {
+	id?: string | number;
+	source?: string;
+}
+
+/** A feature as `querySourceFeatures` reports it. */
+export interface SourceTileFeature {
+	id?: string | number;
+	properties?: Record<string, unknown> | null;
+	geometry: Geometry;
+}
+
+/** What `inspectClick` asks of the map. */
+export interface InspectableMap {
+	queryRenderedFeatures(box: [[number, number], [number, number]]): RenderedTileFeature[];
+	querySourceFeatures(source: string, options: { sourceLayer: string }): SourceTileFeature[];
+	project(lngLat: [number, number]): ScreenPoint;
+	getZoom(): number;
+}
+
+export interface InspectContext {
+	indexes: InspectIndexes;
+	/** The style on the map. */
+	current: readonly StyleLayer[];
+	/** The same style with every layer group shown. */
+	full: readonly StyleLayer[];
+	/** The zooms each tile layer is in the tiles at. */
+	tileZooms: Record<string, ZoomSpan>;
+}
+
+/** Everything a click at `point` hits, drawn or not, by tile layer. */
+export function inspectClick(
+	map: InspectableMap,
+	point: ScreenPoint,
+	lngLat: { lng: number; lat: number },
+	context: InspectContext
+): InspectClick {
+	const zoom = map.getZoom();
+	const byId = new Map(context.current.map((layer) => [layer.id, layer]));
+
+	// The drawn features within the same few pixels the tiles are searched in, so that a line the
+	// click falls next to counts as drawn there, not as missing.
+	const box = (r: number): [[number, number], [number, number]] => [
+		[point.x - r, point.y - r],
+		[point.x + r, point.y + r],
+	];
+	const rendered = map.queryRenderedFeatures(box(HIT_TOLERANCE)).map((feature) => {
+		const [layer] = describeFeatures([feature], context.indexes);
+		const style = byId.get(layer.id);
+		const summary = style ? summarizeLayer(style) : undefined;
+		return {
+			feature: {
+				sourceLayer: feature.sourceLayer ?? '',
+				id: feature.id,
+				properties: feature.properties ?? {},
+			},
+			layer: { ...layer, min: summary?.min, max: summary?.max, fade: summary?.fade },
+		};
+	});
+	const drawn = drawnByTileLayer(rendered);
+	const drawnKeys = new Set(
+		map.queryRenderedFeatures(box(DRAWN_TOLERANCE)).map((feature) =>
+			featureKey({
+				sourceLayer: feature.sourceLayer ?? '',
+				id: feature.id,
+				properties: feature.properties ?? {},
+			})
+		)
+	);
+
+	// The tile layers each source of the style holds: those its layers read, and those the tiles list.
+	const sources = new Map<string, Set<string>>();
+	for (const layer of context.full.concat(context.current)) {
+		if (!('source' in layer) || !('source-layer' in layer) || typeof layer.source !== 'string')
+			continue;
+		const names = sources.get(layer.source) ?? new Set<string>();
+		names.add(layer['source-layer'] as string);
+		if (layer['source-layer'] && layer['source-layer'] in context.tileZooms)
+			for (const name of Object.keys(context.tileZooms)) names.add(name);
+		sources.set(layer.source, names);
+	}
+
+	const undrawn = new Map<string, UndrawnFeature[]>();
+	const seen = new Set<string>();
+	for (const [source, names] of sources) {
+		for (const sourceLayer of names) {
+			let features: SourceTileFeature[];
+			try {
+				features = map.querySourceFeatures(source, { sourceLayer });
+			} catch {
+				continue;
+			}
+			for (const found of features) {
+				const feature: TileFeature = {
+					sourceLayer,
+					id: found.id,
+					properties: found.properties ?? {},
+				};
+				const key = featureKey(feature);
+				if (drawnKeys.has(key) || seen.has(key)) continue;
+				if (!hitsPoint(found.geometry, point, (c) => map.project(c), SOURCE_TOLERANCE)) continue;
+				seen.add(key);
+				const reason = undrawnReason(
+					feature,
+					filterGeometryType(found.geometry.type),
+					zoom,
+					context.current,
+					context.full,
+					(id) => groupOf(context.indexes.groups, id)
+				);
+				const list = undrawn.get(sourceLayer) ?? [];
+				list.push({ ...feature, reason });
+				undrawn.set(sourceLayer, list);
+			}
+		}
+	}
+
+	const order = [...drawn.keys(), ...[...undrawn.keys()].filter((name) => !drawn.has(name))];
+	return {
+		zoom,
+		lngLat,
+		tileLayers: order.map((sourceLayer) => ({
+			sourceLayer,
+			tiles: context.tileZooms[sourceLayer],
+			drawn: drawn.get(sourceLayer) ?? [],
+			undrawn: undrawn.get(sourceLayer) ?? [],
+		})),
+	};
 }

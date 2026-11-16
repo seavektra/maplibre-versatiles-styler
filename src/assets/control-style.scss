@@ -1501,10 +1501,70 @@ $chevron-down: "%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E
 		}
 	}
 
-	// The inspector: a popup next to the point that was clicked, with the controls for what it found.
+	// The inspector: a panel docked to the map's right edge, with the controls for what a click found.
 	.inspect-popup {
 		// As wide as the sidebar: the rows inside are the sidebar's, laid out for its width.
-		width: 320px;
+		width: 340px;
+
+		&.inspect-panel {
+			position: absolute;
+			top: 10px;
+			// Clear of MapLibre's zoom buttons in the top right corner.
+			right: 52px;
+			max-height: calc(100% - 20px);
+		}
+
+		.inspect-head small {
+			margin-left: 6px;
+			color: var(--subtle);
+			font: 400 11px var(--font-mono, ui-monospace, monospace);
+		}
+
+		// One tile layer and what the click hit in it.
+		.inspect-tile-layer + .inspect-tile-layer {
+			margin-top: 12px;
+			padding-top: 10px;
+			border-top: 2px solid var(--line);
+		}
+
+		.inspect-tile-head {
+			display: flex;
+			justify-content: space-between;
+			gap: 8px;
+			margin: 0 0 6px;
+			font-weight: 600;
+
+			code {
+				font-family: var(--font-mono, ui-monospace, monospace);
+			}
+		}
+
+		.inspect-tiles {
+			color: var(--subtle);
+			font-weight: 400;
+			font-size: 11px;
+		}
+
+		.inspect-feature {
+			margin: 0 0 8px;
+			padding-left: 10px;
+			border-left: 2px solid var(--line);
+		}
+
+		.inspect-feature-title {
+			margin: 0;
+			font-weight: 500;
+		}
+
+		.inspect-feature .inspect-item {
+			margin-top: 8px;
+		}
+
+		.inspect-undrawn > summary {
+			margin: 4px 0 6px;
+			color: var(--muted);
+			cursor: pointer;
+		}
 
 		.inspect-body {
 			min-height: 0;

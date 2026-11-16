@@ -86,10 +86,16 @@ describe('hitsPoint', () => {
 		];
 		expect(hitsPoint({ type: 'Polygon', coordinates: square }, { x: 5, y: 5 }, project)).toBe(true);
 		expect(
-			hitsPoint({ type: 'Polygon', coordinates: [...square, hole] }, { x: 5, y: 5 }, project)
+			hitsPoint({ type: 'Polygon', coordinates: [...square, hole] }, { x: 5, y: 5 }, project, 0.5)
 		).toBe(false);
 		expect(hitsPoint({ type: 'Polygon', coordinates: square }, { x: 15, y: 5 }, project)).toBe(
 			false
+		);
+	});
+
+	it('counts a point just outside a polygon edge as a hit', () => {
+		expect(hitsPoint({ type: 'Polygon', coordinates: square }, { x: 13, y: 5 }, project)).toBe(
+			true
 		);
 	});
 

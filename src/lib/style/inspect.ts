@@ -156,7 +156,7 @@ export interface InspectResult {
 const LANDCOVER_PREFIX = 'landcover-';
 
 /** The group path of a layer, or of the fill a land cover fill copies. */
-function groupOf(groups: GroupIndex, id: string): string[] | undefined {
+export function groupOf(groups: GroupIndex, id: string): string[] | undefined {
 	return (
 		groups.get(id) ??
 		(id.startsWith(LANDCOVER_PREFIX) ? groups.get(id.slice(LANDCOVER_PREFIX.length)) : undefined)
