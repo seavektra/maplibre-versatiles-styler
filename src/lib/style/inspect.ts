@@ -133,6 +133,11 @@ export interface InspectedLayer {
 	colors: InspectedColor[];
 	/** The feature's own properties, as the tile carries them. */
 	properties: Record<string, unknown>;
+	/** The zooms it is drawn at, `minzoom` and `maxzoom`; absent when the style sets none. */
+	min?: number;
+	max?: number;
+	/** The zooms its opacity fades in over, from nothing to full. */
+	fade?: [number, number];
 }
 
 /** What a click on the map found, and where. */
