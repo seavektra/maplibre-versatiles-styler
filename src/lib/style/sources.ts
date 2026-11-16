@@ -64,8 +64,11 @@ export const MAPTERHORN_TILES = 'https://tiles.mapterhorn.com/tilejson.json';
  */
 export const PROTOMAPS_ARCHIVE = 'https://data.source.coop/protomaps/openstreetmap/v4.pmtiles';
 
-/** Whose tiles a style is built from. */
-export type Provider = 'versatiles' | 'openfreemap' | 'protomaps' | 'custom';
+/**
+ * Whose tiles a style is built from. `archive` is one of the PMTiles archives the page offers, drawn on
+ * its own.
+ */
+export type Provider = 'versatiles' | 'openfreemap' | 'protomaps' | 'archive' | 'custom';
 
 /**
  * The sources of OpenFreeMap: vector tiles in the OpenMapTiles schema and nothing else, so elevation
@@ -85,6 +88,14 @@ export function openFreeMapSources(elevation?: string): SourceConfig {
  */
 export function protomapsSources(archive: string = PROTOMAPS_ARCHIVE): SourceConfig {
 	return { vector: pmtilesUrl(archive), assets: VERSATILES_ASSETS };
+}
+
+/**
+ * The sources of a PMTiles archive the page offers: its vector tiles and nothing else, so that the map
+ * shows only what the archive holds. Fonts and icons come from the assets server.
+ */
+export function archiveSources(archive: string, assets: string): SourceConfig {
+	return { vector: pmtilesUrl(archive), assets };
 }
 
 /**
@@ -311,7 +322,13 @@ export interface ChosenSources {
 	config: SourceConfig;
 }
 
-const PROVIDER_NAMES: readonly Provider[] = ['versatiles', 'openfreemap', 'protomaps', 'custom'];
+const PROVIDER_NAMES: readonly Provider[] = [
+	'versatiles',
+	'openfreemap',
+	'protomaps',
+	'archive',
+	'custom',
+];
 
 /**
  * The chosen sources as plain data, for a link and for the record in an exported style. A VersaTiles

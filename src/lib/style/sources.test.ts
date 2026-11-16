@@ -5,6 +5,7 @@ import { OMT_SCHEMA } from '@versatiles/style/omt';
 import { PROTOMAPS_SCHEMA } from '@versatiles/style/protomaps';
 import type { TileJSONSpecification } from '@versatiles/style';
 import {
+	archiveSources,
 	fetchTilesetIndex,
 	loadSources,
 	tilesetsFromIndex,
@@ -335,6 +336,15 @@ describe('providerOf', () => {
 	});
 });
 
+describe('archiveSources', () => {
+	it('draws the archive alone, with fonts and icons from the assets server', () => {
+		expect(archiveSources('https://a.org/tilesets/region.pmtiles', 'https://b.org')).toEqual({
+			vector: 'pmtiles://https://a.org/tilesets/region.pmtiles',
+			assets: 'https://b.org',
+		});
+	});
+});
+
 describe('sources as data', () => {
 	it('keeps a VersaTiles server as its origin, and brings its tilesets back', () => {
 		const chosen = { provider: 'versatiles' as const, config: versatilesSources('https://a.org') };
@@ -346,6 +356,10 @@ describe('sources as data', () => {
 		for (const chosen of [
 			{ provider: 'openfreemap' as const, config: openFreeMapSources(MAPTERHORN_TILES) },
 			{ provider: 'protomaps' as const, config: protomapsSources() },
+			{
+				provider: 'archive' as const,
+				config: archiveSources('https://a.org/tilesets/region.pmtiles', 'https://a.org'),
+			},
 			// The same sources as a provider's, chosen as custom ones: the choice is kept.
 			{
 				provider: 'custom' as const,
