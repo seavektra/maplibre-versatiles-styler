@@ -1183,6 +1183,46 @@ $chevron-down: "%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E
 			}
 		}
 
+		// A number between ‹ and ›, which change it by one step.
+		.stepper {
+			display: flex;
+			flex: 0 0 auto;
+			align-items: center;
+
+			.value {
+				min-width: 3em;
+				text-align: center;
+			}
+		}
+
+		.step-button {
+			flex: 0 0 auto;
+			width: 14px;
+			padding: 0;
+			background: none;
+			border: none;
+			color: var(--subtle);
+			font: 600 14px/1 var(--font-mono);
+			cursor: pointer;
+
+			&:hover:not(:disabled) {
+				color: var(--accent);
+			}
+
+			&:disabled {
+				opacity: 0.3;
+				cursor: default;
+			}
+		}
+
+		// What the tiles hold for a layer group, under its zoom fields.
+		.zoom-tiles {
+			margin: 0 0 4px;
+			font-size: 11px;
+			line-height: 1.4;
+			color: var(--muted);
+		}
+
 		.section-description {
 			margin: 0;
 			font-size: 12px;

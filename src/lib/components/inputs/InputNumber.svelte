@@ -23,6 +23,8 @@
 		unit = '',
 		placeholder = 'Mixed',
 		modified,
+		stepper = false,
+		stepFrom,
 		onchange,
 	}: {
 		label: string;
@@ -44,6 +46,10 @@
 		placeholder?: string;
 		/** Overrides `value !== defaultValue`, when `value` summarises several settings. */
 		modified?: boolean;
+		/** Small arrows beside the value that change it by one `step`. */
+		stepper?: boolean;
+		/** Where the arrows start from while there is no value and no default. Default: `min`. */
+		stepFrom?: number;
 		onchange?: () => void;
 	} = $props();
 
@@ -61,6 +67,18 @@
 		const typed = parseSliderInput(text, options);
 		if (typed === undefined || typed === value) return;
 		value = typed;
+		onchange?.();
+	}
+
+	/** One step down or up from what is shown, kept within `min`–`max`. */
+	function stepBy(direction: -1 | 1) {
+		const size = step ?? 1 / scale;
+		const next = Math.min(
+			max,
+			Math.max(min, (value ?? defaultValue ?? stepFrom ?? min) + direction * size)
+		);
+		if (next === value) return;
+		value = next;
 		onchange?.();
 	}
 
@@ -92,12 +110,32 @@
 			{disabled}
 			onchange={handleChange}
 		/>
-		<EditableValue
-			{label}
-			{disabled}
-			display={value === undefined ? placeholder : sliderLabel(value, options, unit)}
-			editText={value === undefined ? '' : sliderLabel(value, options, '')}
-			oncommit={handleTyped}
-		/>
+		<span class:stepper style:display={stepper ? undefined : 'contents'}>
+			{#if stepper}
+				<button
+					type="button"
+					class="step-button"
+					aria-label="{label} down"
+					disabled={disabled || (value ?? defaultValue ?? stepFrom ?? min) <= min}
+					onclick={() => stepBy(-1)}>‹</button
+				>
+			{/if}
+			<EditableValue
+				{label}
+				{disabled}
+				display={value === undefined ? placeholder : sliderLabel(value, options, unit)}
+				editText={value === undefined ? '' : sliderLabel(value, options, '')}
+				oncommit={handleTyped}
+			/>
+			{#if stepper}
+				<button
+					type="button"
+					class="step-button"
+					aria-label="{label} up"
+					disabled={disabled || (value ?? defaultValue ?? stepFrom ?? min) >= max}
+					onclick={() => stepBy(1)}>›</button
+				>
+			{/if}
+		</span>
 	{/snippet}
 </InputRow>

@@ -61,6 +61,7 @@
 	import { decodeConfig, encodeConfig, HashManager, localHashStorage } from '../transfer/hash';
 	import {
 		applyLayerZooms,
+		groupTileZooms,
 		groupZoomDefaults,
 		METADATA_ZOOMS_KEY,
 		parseLayerZooms,
@@ -274,22 +275,27 @@
 	 * The zoom range each layer group has as the library builds it, shown where no range is set. It
 	 * depends on the tiles' schema, not on colours or labels, so it is read off a default style.
 	 */
-	let zoomDefaults = $derived.by((): LayerZooms => {
+	let defaultVectorStyle = $derived.by(() => {
 		const vector = vectorTileJSON;
-		if (!vector) return {};
-		const groups = vectorGroups.layerGroups;
+		if (!vector) return undefined;
 		return untrack(() =>
-			groupZoomDefaults(
-				buildVectorStyle(
-					DEFAULT_STYLE_KEY as Palette,
-					vectorDefaults(DEFAULT_STYLE_KEY as Palette),
-					sourceConfig.assets,
-					{ schema, vector }
-				),
-				groups
+			buildVectorStyle(
+				DEFAULT_STYLE_KEY as Palette,
+				vectorDefaults(DEFAULT_STYLE_KEY as Palette),
+				sourceConfig.assets,
+				{ schema, vector }
 			)
 		);
 	});
+	let zoomDefaults = $derived(
+		defaultVectorStyle ? groupZoomDefaults(defaultVectorStyle, vectorGroups.layerGroups) : {}
+	);
+	/** The zooms each layer group's data is in the tiles at, shown beside its zoom fields. */
+	let tileZooms = $derived(
+		defaultVectorStyle && vectorTileJSON
+			? groupTileZooms(defaultVectorStyle, vectorGroups.layerGroups, vectorTileJSON)
+			: {}
+	);
 
 	function setBaseStyle(key: StyleKey, hashConfig?: Record<string, unknown> | null) {
 		if (currentStyleKey !== key) {
@@ -816,6 +822,7 @@
 				{languages}
 				bind:zooms={layerZooms}
 				{zoomDefaults}
+				{tileZooms}
 			/>
 		{/if}
 		<!-- The project itself, which is neither the map nor the style: out of the action rows. -->

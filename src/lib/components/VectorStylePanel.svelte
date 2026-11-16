@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { FontFaceInfo, LayerGroupMap, TextGroupMap } from '@versatiles/style';
 	import { configChangeCount, type VectorState } from '../style/config';
-	import type { LayerZooms } from '../style/zooms';
+	import type { LayerZooms, TileZooms } from '../style/zooms';
 	import SidebarSection from './SidebarSection.svelte';
 	import ColorOptions from './sections/ColorOptions.svelte';
 	import RecolorOptions from './sections/RecolorOptions.svelte';
@@ -25,6 +25,7 @@
 		languages,
 		zooms = $bindable(),
 		zoomDefaults,
+		tileZooms = {},
 	}: {
 		options: VectorState;
 		defaults: VectorState;
@@ -43,6 +44,8 @@
 		/** The zoom ranges set for layer groups, and the ones the style has as built. */
 		zooms: LayerZooms;
 		zoomDefaults: LayerZooms;
+		/** The zooms each group's data is in the tiles at. */
+		tileZooms?: Record<string, TileZooms>;
 	} = $props();
 
 	const changes = (...paths: string[]) => configChangeCount(config, paths);
@@ -108,6 +111,7 @@
 		{layerGroups}
 		bind:zooms
 		{zoomDefaults}
+		{tileZooms}
 	/>
 </SidebarSection>
 <h4 class="section-group">Appearance</h4>

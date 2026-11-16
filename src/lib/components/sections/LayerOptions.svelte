@@ -20,7 +20,7 @@
 	import InputText from '../inputs/InputText.svelte';
 	import InputVisibility from '../inputs/InputVisibility.svelte';
 	import type { SelectOption } from '../inputs/select';
-	import { MAX_ZOOM, MIN_ZOOM, type LayerZooms } from '../../style/zooms';
+	import { MAX_ZOOM, MIN_ZOOM, type LayerZooms, type TileZooms } from '../../style/zooms';
 
 	let {
 		layers = $bindable(),
@@ -28,6 +28,7 @@
 		layerGroups,
 		zooms = $bindable(),
 		zoomDefaults = {},
+		tileZooms = {},
 		disabled = false,
 	}: {
 		layers: ResolvedLayerGroups;
@@ -38,6 +39,8 @@
 		zooms?: LayerZooms;
 		/** The zoom range each group has in the style as built, by path. */
 		zoomDefaults?: LayerZooms;
+		/** The zooms each group's data is in the tiles at, by group path. */
+		tileZooms?: Record<string, TileZooms>;
 		disabled?: boolean;
 	} = $props();
 
@@ -63,7 +66,7 @@
 					? 'The zoom this group is drawn from. The tiles must hold its data at that zoom.'
 					: 'The zoom this group is hidden from.'}
 				{disabled}
-				placeholder={usual === undefined ? 'auto' : String(usual)}
+				placeholder={usual === undefined ? 'no limit' : String(usual)}
 				bind:value={
 					() => zooms?.[id]?.[bound] ?? usual,
 					(zoom) => {
@@ -80,8 +83,18 @@
 				min={MIN_ZOOM}
 				max={MAX_ZOOM}
 				step={1}
+				stepper
+				stepFrom={bound === 'max' ? MAX_ZOOM : MIN_ZOOM}
 			/>
 		{/each}
+		{@const tiles = tileZooms[id]}
+		{#if tiles}
+			<p class="zoom-tiles">
+				In the tiles: z{tiles.min}{tiles.max > tiles.min ? `–${tiles.max}` : ''} ({tiles.layers.join(
+					', '
+				)})
+			</p>
+		{/if}
 	{/if}
 {/snippet}
 

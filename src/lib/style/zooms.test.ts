@@ -1,7 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import type { LayerGroupMap } from '@versatiles/style';
 import type { StyleSpecification } from 'maplibre-gl';
-import { applyLayerZooms, groupZoomDefaults, layerIdsOfGroup, parseLayerZooms } from './zooms';
+import {
+	applyLayerZooms,
+	groupTileZooms,
+	groupZoomDefaults,
+	layerIdsOfGroup,
+	parseLayerZooms,
+} from './zooms';
 
 const groups = {
 	land: { forest: ['land-forest'], urban: ['land-residential', 'land-park'] },
@@ -139,5 +145,25 @@ describe('parseLayerZooms', () => {
 		).toEqual({ land: { min: 6 }, 'roads.streets': { max: 14 } });
 		expect(parseLayerZooms(null)).toEqual({});
 		expect(parseLayerZooms([1])).toEqual({});
+	});
+});
+
+describe('groupTileZooms', () => {
+	it('gives each group the zooms of its tile layers, within the tileset', () => {
+		const tiles = groupTileZooms(style, groups, {
+			minzoom: 1,
+			maxzoom: 8,
+			vector_layers: [
+				{ id: 'land', minzoom: 7, maxzoom: 14 },
+				{ id: 'ocean', minzoom: 0, maxzoom: 14 },
+			],
+		});
+		expect(tiles['land']).toEqual({ min: 7, max: 8, layers: ['land'] });
+		expect(tiles['land.forest']).toEqual({ min: 7, max: 8, layers: ['land'] });
+		expect(tiles['water.ocean']).toEqual({ min: 1, max: 8, layers: ['ocean'] });
+	});
+
+	it('leaves out groups whose tile layers the tiles do not list', () => {
+		expect(groupTileZooms(style, groups, { vector_layers: [] })).toEqual({});
 	});
 });
