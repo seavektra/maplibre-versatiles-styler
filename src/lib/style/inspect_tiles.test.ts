@@ -138,9 +138,17 @@ describe('undrawnReason', () => {
 	});
 
 	it('says a feature is in range but not shown, e.g. a label that gave way', () => {
-		expect(undrawnReason(forest, 'Polygon', 8, [forestLayer], [forestLayer], groupOf).kind).toBe(
-			'not-shown'
-		);
+		expect(
+			undrawnReason(forest, 'Polygon', 8, [forestLayer], [forestLayer], groupOf)
+		).toMatchObject({
+			kind: 'not-shown',
+			labels: false,
+		});
+		const label: StyleLayer = { ...forestLayer, id: 'label-forest', type: 'symbol' } as StyleLayer;
+		expect(undrawnReason(forest, 'Polygon', 8, [label], [label], groupOf)).toMatchObject({
+			kind: 'not-shown',
+			labels: true,
+		});
 	});
 
 	it('names the hidden group that would draw it', () => {

@@ -103,8 +103,12 @@
 		switch (reason.kind) {
 			case 'zoom':
 				return `Outside the zoom of ${reason.layers.map((l) => `${l.id} (${zoomText(l.min, l.max)})`).join(', ')}.`;
-			case 'not-shown':
-				return `${reason.layers.map((l) => l.id).join(', ')} would draw it here, but it does not show: a label that gave way to another, or nothing to paint.`;
+			case 'not-shown': {
+				const ids = reason.layers.map((l) => l.id).join(', ');
+				return reason.labels
+					? `Its label (${ids}) is not placed at this spot. A label along a road or an area is placed only every so often, and one that would overlap another label is left out.`
+					: `${ids} draws it at this zoom, but nothing visible is painted here, e.g. its opacity or width is 0.`;
+			}
 			case 'hidden':
 				return `Its layer group is hidden: ${reason.groups.join(', ')}.`;
 			case 'unstyled':

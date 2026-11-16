@@ -37,7 +37,8 @@ export type UndrawnReason =
 	/** Style layers draw features like it, but not at this zoom. */
 	| { kind: 'zoom'; layers: LayerSummary[] }
 	/** Style layers draw features like it at this zoom, yet nothing of it shows: a label that gave way to another, or nothing to paint. */
-	| { kind: 'not-shown'; layers: LayerSummary[] }
+	/** In range, yet not painted here; `labels` when every such layer is a label (a symbol layer). */
+	| { kind: 'not-shown'; layers: LayerSummary[]; labels: boolean }
 	/** The layer groups that would draw it are hidden. */
 	| { kind: 'hidden'; groups: string[] }
 	/** No style layer draws features like it. */
@@ -434,10 +435,13 @@ export function undrawnReason(
 	if (drawing.length > 0) {
 		const inZoom = (layer: StyleLayer) =>
 			zoom >= (layer.minzoom ?? 0) && zoom < (layer.maxzoom ?? Infinity);
-		const summaries = drawing.map(summarizeLayer);
-		return drawing.some(inZoom)
-			? { kind: 'not-shown', layers: summaries }
-			: { kind: 'zoom', layers: summaries };
+		const inRange = drawing.filter(inZoom);
+		if (inRange.length === 0) return { kind: 'zoom', layers: drawing.map(summarizeLayer) };
+		return {
+			kind: 'not-shown',
+			layers: inRange.map(summarizeLayer),
+			labels: inRange.every((layer) => layer.type === 'symbol'),
+		};
 	}
 	const shown = new Set(current.map((layer) => layer.id));
 	const groups = [
