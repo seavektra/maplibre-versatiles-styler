@@ -8,6 +8,7 @@
 	import { portalToMap } from './popover';
 
 	let { label, hint }: { label: string; hint: string | Snippet } = $props();
+	let wide = $derived(typeof hint !== 'string');
 
 	const uid = $props.id();
 
@@ -65,7 +66,8 @@
 			// The tooltip follows its row; once the pane has scrolled the ⓘ away, it goes.
 			if (rect.bottom < pane.top || rect.top > pane.bottom) return close();
 			const min = Math.max(margin, pane.left + margin);
-			const max = Math.min(window.innerWidth, pane.right) - margin;
+			// A table, such as a layer group's layers, may reach out over the map.
+			const max = (wide ? window.innerWidth : Math.min(window.innerWidth, pane.right)) - margin;
 			tip.style.maxWidth = `${max - min}px`;
 			const center = rect.left + rect.width / 2;
 			const width = tip.offsetWidth;

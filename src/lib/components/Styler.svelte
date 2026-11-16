@@ -61,10 +61,10 @@
 	import { decodeConfig, encodeConfig, HashManager, localHashStorage } from '../transfer/hash';
 	import {
 		applyLayerZooms,
-		groupTileZooms,
 		groupZoomDefaults,
 		METADATA_ZOOMS_KEY,
 		parseLayerZooms,
+		tileLayerZooms,
 		type LayerZooms,
 	} from '../style/zooms';
 	import { provideFontPickerState } from './state/font_picker.svelte';
@@ -290,14 +290,10 @@
 	let zoomDefaults = $derived(
 		defaultVectorStyle ? groupZoomDefaults(defaultVectorStyle, vectorGroups.layerGroups) : {}
 	);
-	/** The zooms each layer group's data is in the tiles at, shown beside its zoom fields. */
+	/** The zooms each tile layer is in the tiles at, for what each layer group's ⓘ lists. */
 	/** The layers of the vector style on the map, for what each layer group's ⓘ lists. */
 	let styleLayers = $state.raw<StyleSpecification['layers'] | undefined>();
-	let tileZooms = $derived(
-		defaultVectorStyle && vectorTileJSON
-			? groupTileZooms(defaultVectorStyle, vectorGroups.layerGroups, vectorTileJSON)
-			: {}
-	);
+	let tileZooms = $derived(vectorTileJSON ? tileLayerZooms(vectorTileJSON) : {});
 
 	function setBaseStyle(key: StyleKey, hashConfig?: Record<string, unknown> | null) {
 		if (currentStyleKey !== key) {

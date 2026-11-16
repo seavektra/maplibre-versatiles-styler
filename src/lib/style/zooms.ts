@@ -163,11 +163,10 @@ export function groupZoomDefaults(style: StyleSpecification, groups: LayerGroupM
 	return defaults;
 }
 
-/** The zooms a layer group's data is in the tiles at, and the tile layers it comes from. */
-export interface TileZooms {
+/** A range of zooms, both ends included. */
+export interface ZoomSpan {
 	min: number;
 	max: number;
-	layers: string[];
 }
 
 /** What a TileJSON says about its vector layers' zooms; other fields are not read. */
@@ -178,19 +177,13 @@ interface VectorTileZooms {
 }
 
 /**
- * The zooms each group's data is in the tiles at, by group path: from the lowest to the highest zoom
- * of the tile layers its map layers read, within the tileset's own zooms. Above `max` the map still
- * draws the data, from the tiles of `max` scaled up. A group whose tile layers the tiles do not list
- * is left out.
+ * The zooms each tile layer is in the tiles at, by its name: its own zooms within the tileset's. Above
+ * `max` the map still draws it, from the tiles of `max` scaled up.
  */
-export function groupTileZooms(
-	style: StyleSpecification,
-	groups: LayerGroupMap,
-	tileJSON: VectorTileZooms
-): Record<string, TileZooms> {
+export function tileLayerZooms(tileJSON: VectorTileZooms): Record<string, ZoomSpan> {
 	const tilesMin = tileJSON.minzoom ?? MIN_ZOOM;
 	const tilesMax = tileJSON.maxzoom ?? MAX_ZOOM;
-	const tileLayers = new Map(
+	return Object.fromEntries(
 		(tileJSON.vector_layers ?? []).map((layer) => [
 			layer.id,
 			{
@@ -199,44 +192,6 @@ export function groupTileZooms(
 			},
 		])
 	);
-	const sourceLayers = new Map(
-		style.layers.map((layer) => [
-			layer.id,
-			'source-layer' in layer ? (layer['source-layer'] as string | undefined) : undefined,
-		])
-	);
-	const result: Record<string, TileZooms> = {};
-	for (const path of groupPaths(groups)) {
-		const names = [
-			...new Set(
-				layerIdsOfGroup(groups, path)
-					.map((id) => sourceLayers.get(id))
-					.filter((name): name is string => name !== undefined && tileLayers.has(name))
-			),
-		].sort();
-		if (names.length === 0) continue;
-		const ranges = names.map((name) => tileLayers.get(name)!);
-		result[path] = {
-			min: Math.min(...ranges.map((r) => r.min)),
-			max: Math.max(...ranges.map((r) => r.max)),
-			layers: names,
-		};
-	}
-	return result;
-}
-
-/** The paths of all groups and sub-groups, parents first. */
-function groupPaths(groups: LayerGroupMap): string[] {
-	const paths: string[] = [];
-	const visit = (node: unknown, path: string[]) => {
-		if (node === null || typeof node !== 'object' || Array.isArray(node)) return;
-		for (const [key, child] of Object.entries(node)) {
-			paths.push([...path, key].join('.'));
-			visit(child, [...path, key]);
-		}
-	};
-	visit(groups, []);
-	return paths;
 }
 
 /** What a map layer of a group draws and at which zooms, as a group's ⓘ lists it. */

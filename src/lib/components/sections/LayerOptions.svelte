@@ -25,7 +25,7 @@
 		MAX_ZOOM,
 		MIN_ZOOM,
 		type LayerZooms,
-		type TileZooms,
+		type ZoomSpan,
 	} from '../../style/zooms';
 	import type { StyleSpecification } from 'maplibre-gl';
 
@@ -47,8 +47,8 @@
 		zooms?: LayerZooms;
 		/** The zoom range each group has in the style as built, by path. */
 		zoomDefaults?: LayerZooms;
-		/** The zooms each group's data is in the tiles at, by group path. */
-		tileZooms?: Record<string, TileZooms>;
+		/** The zooms each tile layer is in the tiles at, by its name. */
+		tileZooms?: Record<string, ZoomSpan>;
 		/** The layers of the style on the map, for what each group's ⓘ lists. */
 		styleLayers?: StyleSpecification['layers'];
 		disabled?: boolean;
@@ -107,14 +107,6 @@
 				stepFrom={bound === 'max' ? MAX_ZOOM : MIN_ZOOM}
 			/>
 		{/each}
-		{@const tiles = tileZooms[id]}
-		{#if tiles}
-			<p class="zoom-tiles">
-				In the tiles: z{tiles.min}{tiles.max > tiles.min ? `–${tiles.max}` : ''} ({tiles.layers.join(
-					', '
-				)})
-			</p>
-		{/if}
 	{/if}
 {/snippet}
 
@@ -181,14 +173,16 @@
 		<span>No layers of this group are in the style.</span>
 	{:else}
 		<table class="group-info">
-			<thead><tr><th>Layer</th><th>Draws</th><th>Zoom</th><th>Fade</th></tr></thead>
+			<thead><tr><th>Layer</th><th>Draws</th><th>Zoom</th><th>Fade</th><th>Tiles</th></tr></thead>
 			<tbody>
 				{#each summaries as layer (layer.id)}
+					{@const tiles = layer.sourceLayer ? tileZooms[layer.sourceLayer] : undefined}
 					<tr>
 						<td>{layer.id}</td>
 						<td>{layer.sourceLayer ?? ''}{layer.kinds ? `: ${layer.kinds.join(', ')}` : ''}</td>
 						<td>{layer.min ?? 0}–{layer.max ?? '∞'}</td>
 						<td>{layer.fade ? `${layer.fade[0]}→${layer.fade[1]}` : '—'}</td>
+						<td>{tiles ? `${tiles.min}–${tiles.max}` : '—'}</td>
 					</tr>
 				{/each}
 			</tbody>

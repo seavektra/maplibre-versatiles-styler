@@ -4,10 +4,10 @@ import type { StyleSpecification } from 'maplibre-gl';
 import {
 	applyLayerZooms,
 	groupLayerSummaries,
-	groupTileZooms,
 	groupZoomDefaults,
 	layerIdsOfGroup,
 	parseLayerZooms,
+	tileLayerZooms,
 } from './zooms';
 
 const groups = {
@@ -149,23 +149,19 @@ describe('parseLayerZooms', () => {
 	});
 });
 
-describe('groupTileZooms', () => {
-	it('gives each group the zooms of its tile layers, within the tileset', () => {
-		const tiles = groupTileZooms(style, groups, {
-			minzoom: 1,
-			maxzoom: 8,
-			vector_layers: [
-				{ id: 'land', minzoom: 7, maxzoom: 14 },
-				{ id: 'ocean', minzoom: 0, maxzoom: 14 },
-			],
-		});
-		expect(tiles['land']).toEqual({ min: 7, max: 8, layers: ['land'] });
-		expect(tiles['land.forest']).toEqual({ min: 7, max: 8, layers: ['land'] });
-		expect(tiles['water.ocean']).toEqual({ min: 1, max: 8, layers: ['ocean'] });
-	});
-
-	it('leaves out groups whose tile layers the tiles do not list', () => {
-		expect(groupTileZooms(style, groups, { vector_layers: [] })).toEqual({});
+describe('tileLayerZooms', () => {
+	it('gives each tile layer its zooms within the tileset', () => {
+		expect(
+			tileLayerZooms({
+				minzoom: 1,
+				maxzoom: 8,
+				vector_layers: [
+					{ id: 'land', minzoom: 7, maxzoom: 14 },
+					{ id: 'ocean', minzoom: 0, maxzoom: 14 },
+				],
+			})
+		).toEqual({ land: { min: 7, max: 8 }, ocean: { min: 1, max: 8 } });
+		expect(tileLayerZooms({})).toEqual({});
 	});
 });
 
