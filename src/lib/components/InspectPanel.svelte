@@ -7,6 +7,7 @@
 		TileLayerHits,
 		UndrawnReason,
 	} from '../style/inspect_tiles';
+	import { filterText } from '../style/inspect_tiles';
 	import { colorLabel } from '../options/colors';
 	import {
 		findLayerNode,
@@ -202,6 +203,9 @@
 			<span>{zoomText(layer.min, layer.max)}</span>
 			{#if layer.fade}<span>fade {layer.fade[0]}→{layer.fade[1]}</span>{/if}
 		</p>
+		{#if layer.filter !== undefined}
+			<p class="inspect-filter"><span>Filter</span> <code>{filterText(layer.filter)}</code></p>
+		{/if}
 		<!-- The rows come from the sections, and their styles hang off the list class those use. -->
 		<div class="maplibregl-list">
 			{#if node && layers && layerDefaults}

@@ -4,6 +4,7 @@ import type { InspectedLayer } from './inspect';
 import {
 	drawnByTileLayer,
 	featureKey,
+	filterText,
 	hitsPoint,
 	matchesFilter,
 	undrawnReason,
@@ -155,5 +156,29 @@ describe('undrawnReason', () => {
 		).toEqual({
 			kind: 'unstyled',
 		});
+	});
+});
+
+describe('filterText', () => {
+	it('reads the filters the built styles use', () => {
+		expect(
+			filterText([
+				'all',
+				['!=', ['get', 'bridge'], true],
+				['!=', ['get', 'tunnel'], true],
+				['in', ['get', 'kind'], ['literal', ['motorway', 'trunk']]],
+			])
+		).toBe('bridge ≠ true and tunnel ≠ true and kind in motorway, trunk');
+		expect(filterText(['any', ['==', ['get', 'kind'], 'a'], ['!', ['has', 'name']]])).toBe(
+			'kind = a or not has name'
+		);
+		expect(
+			filterText(['all', ['any', ['==', ['get', 'a'], 1], ['==', ['get', 'b'], 2]], ['has', 'c']])
+		).toBe('(a = 1 or b = 2) and has c');
+	});
+
+	it('reads the legacy syntax', () => {
+		expect(filterText(['==', '$type', 'Polygon'])).toBe('geometry = Polygon');
+		expect(filterText(['in', 'class', 'grass', 'wood'])).toBe('class in grass, wood');
 	});
 });

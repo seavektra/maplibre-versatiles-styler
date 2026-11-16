@@ -116,6 +116,83 @@ export function matchesFilter(
 	return value === UNKNOWN ? true : Boolean(value);
 }
 
+/**
+ * A style layer's filter as a person reads it: `kind = motorway and tunnel ≠ true`. Covers the
+ * expressions the built styles use and the legacy syntax; anything else is shown as JSON.
+ */
+export function filterText(filter: unknown): string {
+	return formatFilter(filter, false);
+}
+
+const OPERATORS: Record<string, string> = {
+	'==': '=',
+	'!=': '≠',
+	'<': '<',
+	'<=': '≤',
+	'>': '>',
+	'>=': '≥',
+};
+
+function formatValue(value: unknown): string {
+	if (Array.isArray(value)) return value.map(formatValue).join(', ');
+	if (typeof value === 'string') return value;
+	return JSON.stringify(value);
+}
+
+function formatFilter(expression: unknown, nested: boolean): string {
+	if (!Array.isArray(expression)) return formatValue(expression);
+	const [op, ...args] = expression as [unknown, ...unknown[]];
+	if (typeof op !== 'string') return formatValue(expression);
+	const inner = (arg: unknown) => formatFilter(arg, true);
+	const legacy = typeof args[0] === 'string';
+	/** The left side of a comparison: in the legacy syntax, a property's name. */
+	const subject = (arg: unknown) =>
+		legacy ? (arg === '$type' ? 'geometry' : arg === '$id' ? 'id' : String(arg)) : inner(arg);
+	const group = (parts: string[], joiner: string) => {
+		const text = parts.join(joiner);
+		return nested && parts.length > 1 ? `(${text})` : text;
+	};
+	switch (op) {
+		case 'literal':
+			return formatValue(args[0]);
+		case 'get':
+			return typeof args[0] === 'string' ? args[0] : JSON.stringify(expression);
+		case 'has':
+			return `has ${String(args[0])}`;
+		case '!has':
+			return `no ${String(args[0])}`;
+		case 'geometry-type':
+			return 'geometry';
+		case 'id':
+			return 'id';
+		case 'to-boolean':
+			return inner(args[0]);
+		case '!':
+			return `not ${inner(args[0])}`;
+		case 'all':
+			return group(args.map(inner), ' and ');
+		case 'any':
+			return group(args.map(inner), ' or ');
+		case 'none':
+			return `none of (${args.map(inner).join(', ')})`;
+		case '==':
+		case '!=':
+		case '<':
+		case '<=':
+		case '>':
+		case '>=':
+			return `${subject(args[0])} ${OPERATORS[op]} ${inner(args[1])}`;
+		case 'in':
+		case '!in': {
+			const word = op === 'in' ? 'in' : 'not in';
+			if (legacy) return `${subject(args[0])} ${word} ${args.slice(1).map(formatValue).join(', ')}`;
+			return `${inner(args[0])} ${word} ${inner(args[1])}`;
+		}
+		default:
+			return JSON.stringify(expression);
+	}
+}
+
 const UNKNOWN = Symbol('unknown');
 
 function evaluate(expression: unknown, feature: TileFeature, geometryType?: string): unknown {
@@ -432,7 +509,13 @@ export function inspectClick(
 				id: feature.id,
 				properties: feature.properties ?? {},
 			},
-			layer: { ...layer, min: summary?.min, max: summary?.max, fade: summary?.fade },
+			layer: {
+				...layer,
+				min: summary?.min,
+				max: summary?.max,
+				fade: summary?.fade,
+				filter: style && 'filter' in style ? style.filter : undefined,
+			},
 		};
 	});
 	const drawn = drawnByTileLayer(rendered);

@@ -138,6 +138,8 @@ export interface InspectedLayer {
 	max?: number;
 	/** The zooms its opacity fades in over, from nothing to full. */
 	fade?: [number, number];
+	/** The style layer's filter: which of its tile layer's features it draws. */
+	filter?: unknown;
 }
 
 /** What a click on the map found, and where. */

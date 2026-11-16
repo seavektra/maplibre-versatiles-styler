@@ -1595,6 +1595,19 @@ $chevron-down: "%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E
 		}
 
 		// The layer as the style names it: the identity to search for in an exported style.json.
+		// Why the style layer draws this feature, under its id.
+		.inspect-filter {
+			margin: -4px 0 6px;
+			color: var(--subtle);
+			font-size: 11px;
+
+			code {
+				font-family: var(--font-mono, ui-monospace, monospace);
+				color: var(--ink);
+				overflow-wrap: anywhere;
+			}
+		}
+
 		.inspect-meta {
 			display: flex;
 			flex-wrap: wrap;
