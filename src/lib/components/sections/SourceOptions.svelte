@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { archiveUrl, isPMTilesUrl, pmtilesUrl } from '../../style/pmtiles';
 	import {
+		archiveSources,
 		sourceStatus,
 		sourceUrl,
 		vectorSchema,
@@ -149,13 +150,39 @@
 	<InputSelect
 		label="File"
 		bind:value={
-			() => config.vector ?? '', (url) => onconfig({ vector: url ?? '', assets: config.assets })
+			() => config.vector ?? '',
+			(url) =>
+				onconfig(
+					url
+						? archiveSources(
+								url,
+								config.assets,
+								url === config.elevation ? undefined : config.elevation
+							)
+						: { vector: '', assets: config.assets }
+				)
 		}
 		defaultValue={undefined}
 		modified={false}
 		options={archives.map((archive) => ({ value: pmtilesUrl(archive.url), label: archive.name }))}
 	/>
 	{@render found('vector', 'Vector tiles', '')}
+	<InputSelect
+		label="Elevation"
+		hint="Another of these files, with elevation tiles in Terrarium encoding. It makes Terrain & hillshade available."
+		bind:value={() => config.elevation ?? '', (url) => onconfig(withUrl('elevation', url ?? ''))}
+		defaultValue={undefined}
+		modified={false}
+		options={[
+			{ value: '', label: 'None' },
+			...archives
+				.map((archive) => ({ value: pmtilesUrl(archive.url), label: archive.name }))
+				.filter((option) => option.value !== config.vector),
+		]}
+	/>
+	{#if config.elevation !== undefined}
+		{@render found('elevation', 'Elevation tiles', '')}
+	{/if}
 	{#if schemaUnknown}
 		<InputSelect
 			label="Schema"

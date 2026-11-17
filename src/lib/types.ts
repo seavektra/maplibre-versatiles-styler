@@ -18,7 +18,9 @@ export interface VersaTilesStylerConfig {
 	/**
 	 * PMTiles archives the page has, offered in the sidebar as a provider of their own: the archive
 	 * picked there is the only tiles the map draws, and the map moves to its bounds. Fonts and icons
-	 * still come from `origin`. Each has a name to list it by and its address. Needs `addProtocol`.
+	 * still come from `origin`. Another of them can be picked as the elevation tiles (Terrarium
+	 * encoding), which makes hillshade and terrain available. Each has a name to list it by and its address.
+	 * Needs `addProtocol`.
 	 */
 	archives?: { name: string; url: string }[];
 	/**

@@ -343,6 +343,20 @@ describe('archiveSources', () => {
 			assets: 'https://b.org',
 		});
 	});
+
+	it('adds another archive as the elevation tiles', () => {
+		expect(
+			archiveSources(
+				'https://a.org/tilesets/region.pmtiles',
+				'https://b.org',
+				'https://a.org/tilesets/terrain.pmtiles'
+			)
+		).toEqual({
+			vector: 'pmtiles://https://a.org/tilesets/region.pmtiles',
+			elevation: 'pmtiles://https://a.org/tilesets/terrain.pmtiles',
+			assets: 'https://b.org',
+		});
+	});
 });
 
 describe('sources as data', () => {
@@ -359,6 +373,14 @@ describe('sources as data', () => {
 			{
 				provider: 'archive' as const,
 				config: archiveSources('https://a.org/tilesets/region.pmtiles', 'https://a.org'),
+			},
+			{
+				provider: 'archive' as const,
+				config: archiveSources(
+					'https://a.org/tilesets/region.pmtiles',
+					'https://a.org',
+					'https://a.org/tilesets/terrain.pmtiles'
+				),
 			},
 			// The same sources as a provider's, chosen as custom ones: the choice is kept.
 			{

@@ -91,11 +91,16 @@ export function protomapsSources(archive: string = PROTOMAPS_ARCHIVE): SourceCon
 }
 
 /**
- * The sources of a PMTiles archive the page offers: its vector tiles and nothing else, so that the map
- * shows only what the archive holds. Fonts and icons come from the assets server.
+ * The sources of a PMTiles archive the page offers: its vector tiles and nothing else from a server, so
+ * that the map shows only what the page's archives hold. Elevation, if any, is another of those
+ * archives, of Terrarium tiles, for hillshade and terrain. Fonts and icons come from the assets server.
  */
-export function archiveSources(archive: string, assets: string): SourceConfig {
-	return { vector: pmtilesUrl(archive), assets };
+export function archiveSources(archive: string, assets: string, elevation?: string): SourceConfig {
+	return {
+		vector: pmtilesUrl(archive),
+		...(elevation ? { elevation: pmtilesUrl(elevation) } : {}),
+		assets,
+	};
 }
 
 /**
