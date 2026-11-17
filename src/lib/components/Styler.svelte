@@ -31,13 +31,7 @@
 		type SatelliteState,
 	} from '../style/config';
 	import type { ImportResult } from '../transfer/import';
-	import {
-		colorIndex,
-		describeFeatures,
-		groupIndex,
-		type InspectResult,
-		type RenderedFeature,
-	} from '../style/inspect';
+	import { colorIndex, groupIndex } from '../style/inspect';
 	import {
 		archiveSources,
 		fetchTilesetIndex,
@@ -58,6 +52,8 @@
 	import { registerPMTiles } from '../style/pmtiles';
 	import { languageOptions } from '../options/languages';
 	import { onDestroy, untrack } from 'svelte';
+	import { SvelteSet } from 'svelte/reactivity';
+	import { highlightGeometry, setStyleLayerShown } from '../style/inspect_overlay';
 	import { decodeConfig, encodeConfig, HashManager, localHashStorage } from '../transfer/hash';
 	import {
 		applyLayerZooms,
@@ -77,7 +73,8 @@
 	import ThemeSelect from './ThemeSelect.svelte';
 	import ExportDialog from './ExportDialog.svelte';
 	import SourceOptions from './sections/SourceOptions.svelte';
-	import InspectPopup from './InspectPopup.svelte';
+	import InspectPanel from './InspectPanel.svelte';
+	import { inspectClick, type InspectableMap, type InspectClick } from '../style/inspect_tiles';
 	import ImportDialog from './ImportDialog.svelte';
 
 	let { map, config }: { map: MLGLMap; config: VersaTilesStylerConfig } = $props();
@@ -431,7 +428,7 @@
 	/** Whether a click on the map says what is under it, and how it got its looks. */
 	let inspectOn = $state(false);
 	/** The features of the last click, described when it happened. */
-	let inspectResult = $state<InspectResult | undefined>();
+	let inspectResult = $state<InspectClick | undefined>();
 
 	/**
 	 * What names the layers of the style on the map. Built only while the inspector is on, and only
@@ -474,6 +471,29 @@
 		};
 	});
 
+	/** Style layers the inspector has switched off on the map, to see what the others paint. */
+	const hiddenStyleLayers = new SvelteSet<string>();
+
+	function toggleStyleLayer(id: string) {
+		const hide = !hiddenStyleLayers.has(id);
+		setStyleLayerShown(map, id, !hide);
+		if (hide) hiddenStyleLayers.add(id);
+		else hiddenStyleLayers.delete(id);
+	}
+
+	/** Back to the style as built: every switched-off layer on again, no outline. */
+	function resetInspectorView() {
+		for (const id of hiddenStyleLayers) setStyleLayerShown(map, id, true);
+		hiddenStyleLayers.clear();
+		highlightGeometry(map, undefined);
+	}
+
+	// A rebuilt style comes with all its layers on.
+	$effect(() => {
+		void styleLayers;
+		untrack(() => hiddenStyleLayers.clear());
+	});
+
 	$effect(() => {
 		if (!inspectOn) return;
 		const canvas = map.getCanvas();
@@ -482,19 +502,25 @@
 		const handler = (event: MapMouseEvent) => {
 			const indexes = inspectIndexes;
 			if (!indexes) return;
-			// Only what the map draws is found: a hidden group is not drawn, so it is never a hit.
-			const features = map.queryRenderedFeatures(event.point) as unknown as RenderedFeature[];
-			inspectResult = {
-				layers: describeFeatures(features, indexes),
-				point: { x: event.originalEvent.clientX, y: event.originalEvent.clientY },
-				lngLat: { lng: event.lngLat.lng, lat: event.lngLat.lat },
-			};
+			// What the map draws there, and what the loaded tiles hold there that it does not draw.
+			inspectResult = inspectClick(
+				map as unknown as InspectableMap,
+				event.point,
+				{ lng: event.lngLat.lng, lat: event.lngLat.lat },
+				{
+					indexes,
+					current: styleLayers ?? [],
+					full: defaultVectorStyle?.layers ?? [],
+					tileZooms,
+				}
+			);
 		};
 		map.on('click', handler);
 		return () => {
 			map.off('click', handler);
 			canvas.style.cursor = hostCursor;
 			inspectResult = undefined;
+			resetInspectorView();
 		};
 	});
 
@@ -859,7 +885,7 @@
 	/>
 {/if}
 {#if inspectResult}
-	<InspectPopup
+	<InspectPanel
 		result={inspectResult}
 		{container}
 		colors={inspectTargets.colors}
@@ -867,6 +893,12 @@
 		layers={inspectTargets.layers}
 		layerDefaults={inspectTargets.layerDefaults}
 		layerGroups={inspectTargets.layerGroups}
-		onclose={() => (inspectResult = undefined)}
+		{hiddenStyleLayers}
+		ontogglestylelayer={toggleStyleLayer}
+		onhighlight={(geometry) => highlightGeometry(map, geometry)}
+		onclose={() => {
+			inspectResult = undefined;
+			resetInspectorView();
+		}}
 	/>
 {/if}

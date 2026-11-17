@@ -133,6 +133,13 @@ export interface InspectedLayer {
 	colors: InspectedColor[];
 	/** The feature's own properties, as the tile carries them. */
 	properties: Record<string, unknown>;
+	/** The zooms it is drawn at, `minzoom` and `maxzoom`; absent when the style sets none. */
+	min?: number;
+	max?: number;
+	/** The zooms its opacity fades in over, from nothing to full. */
+	fade?: [number, number];
+	/** The style layer's filter: which of its tile layer's features it draws. */
+	filter?: unknown;
 }
 
 /** What a click on the map found, and where. */
@@ -151,7 +158,7 @@ export interface InspectResult {
 const LANDCOVER_PREFIX = 'landcover-';
 
 /** The group path of a layer, or of the fill a land cover fill copies. */
-function groupOf(groups: GroupIndex, id: string): string[] | undefined {
+export function groupOf(groups: GroupIndex, id: string): string[] | undefined {
 	return (
 		groups.get(id) ??
 		(id.startsWith(LANDCOVER_PREFIX) ? groups.get(id.slice(LANDCOVER_PREFIX.length)) : undefined)

@@ -216,7 +216,8 @@ export function groupLayerSummaries(
 	return style.layers.filter((layer) => ids.has(layer.id)).map(summarizeLayer);
 }
 
-function summarizeLayer(layer: StyleSpecification['layers'][number]): LayerSummary {
+/** What a style layer draws and at which zooms. */
+export function summarizeLayer(layer: StyleSpecification['layers'][number]): LayerSummary {
 	const summary: LayerSummary = { id: layer.id };
 	if ('source-layer' in layer && typeof layer['source-layer'] === 'string') {
 		summary.sourceLayer = layer['source-layer'];
