@@ -33,7 +33,7 @@ describe('HashManager', () => {
 		window.location.hash = '';
 	});
 
-	describe('storage', () => {
+	describe('zoom ranges and storage', () => {
 		function memoryStorage(initial: string | null): HashStorage & { saved: string[] } {
 			const saved: string[] = [];
 			return { saved, load: () => initial, save: (hash) => saved.push(hash) };
@@ -42,21 +42,59 @@ describe('HashManager', () => {
 		it('restores the stored hash when the page opens without one, and keeps every update', () => {
 			// The real replaceState: it changes the URL without a hashchange, as browsers do.
 			replaceStateSpy.mockRestore();
-			const storage = memoryStorage('#map=6/37.4/-120&style=colorful-dark');
-			const hm = new HashManager(createMockMap(), vi.fn(), undefined, undefined, storage);
+			const zooms = encodeConfig({ land: { min: 6 } });
+			const storage = memoryStorage(`#map=6/37.4/-120&style=colorful-dark&zooms=${zooms}`);
+			const hm = new HashManager(
+				createMockMap(),
+				vi.fn(),
+				undefined,
+				undefined,
+				{ onChange: vi.fn() },
+				storage
+			);
 
-			expect(hm.initialize().styleKey).toBe('colorful-dark');
+			const state = hm.initialize();
+			expect(state.styleKey).toBe('colorful-dark');
+			expect(state.zooms).toBe(zooms);
+			// Events the earlier hash assignments queued go first.
 			vi.advanceTimersByTime(400);
-			expect(storage.saved[storage.saved.length - 1]).toContain('style=colorful-dark');
+
+			hm.setZooms(null);
+			vi.advanceTimersByTime(400);
+			expect(storage.saved[storage.saved.length - 1]).not.toContain('zooms=');
 			hm.destroy();
 		});
 
 		it('leaves a hash the page opens with as it is', () => {
 			window.location.hash = '#style=colorful-dark';
 			const storage = memoryStorage('#style=graybeard');
-			const hm = new HashManager(createMockMap(), vi.fn(), undefined, undefined, storage);
+			const hm = new HashManager(
+				createMockMap(),
+				vi.fn(),
+				undefined,
+				undefined,
+				undefined,
+				storage
+			);
 
 			expect(hm.initialize().styleKey).toBe('colorful-dark');
+		});
+
+		it('writes the zoom ranges into the hash and reports them when the hash changes', () => {
+			const onChange = vi.fn();
+			const hm = new HashManager(createMockMap(), vi.fn(), undefined, undefined, { onChange });
+			hm.initialize();
+			const zooms = encodeConfig({ 'land.forest': { min: 6 } });
+
+			hm.setZooms(zooms);
+			vi.advanceTimersByTime(400);
+			expect(
+				String(replaceStateSpy.mock.calls[replaceStateSpy.mock.calls.length - 1]?.[2])
+			).toContain(`zooms=${zooms}`);
+
+			window.location.hash = '#map=10/51.5/-0.12';
+			window.dispatchEvent(new HashChangeEvent('hashchange'));
+			expect(onChange).toHaveBeenCalledWith(null);
 		});
 	});
 

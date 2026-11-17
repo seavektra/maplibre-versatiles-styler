@@ -44,6 +44,11 @@ export interface SourcesHash {
 	onChange: (sources: string | null) => void;
 }
 
+/** How the zoom ranges of layer groups are told to the hash: as one encoded parameter, `null` for none. */
+export interface ZoomsHash {
+	onChange: (zooms: string | null) => void;
+}
+
 /** Reads and writes the last hash a page had, so that opening it again without a hash restores it. */
 export interface HashStorage {
 	load(): string | null;
@@ -76,7 +81,9 @@ export class HashManager {
 	private panel: PanelHash | undefined;
 	private sources: SourcesHash | undefined;
 	private currentSources: string | null = null;
+	private zooms: ZoomsHash | undefined;
 	private storage: HashStorage | undefined;
+	private currentZooms: string | null = null;
 	private currentStyleKey: StyleKey = DEFAULT_STYLE_KEY;
 	private currentConfigEncoded: string | null = null;
 	private currentPanelOpen = false;
@@ -91,12 +98,14 @@ export class HashManager {
 		onStyleChange: (key: StyleKey, config: Record<string, unknown> | null) => void,
 		panel?: PanelHash,
 		sources?: SourcesHash,
+		zooms?: ZoomsHash,
 		storage?: HashStorage
 	) {
 		this.map = map;
 		this.onStyleChange = onStyleChange;
 		this.panel = panel;
 		this.sources = sources;
+		this.zooms = zooms;
 		this.storage = storage;
 		this.boundOnMoveEnd = () => this.onMoveEnd();
 		this.boundOnHashChange = () => this.onHashChange();
@@ -109,6 +118,8 @@ export class HashManager {
 		panelOpen: boolean | undefined;
 		/** The tile sources the hash names, if it is told about sources at all. */
 		sources: string | undefined;
+		/** The encoded zoom ranges the hash names, if it is told about them. */
+		zooms: string | undefined;
 	} {
 		this.tryDisableMapHash();
 
@@ -118,8 +129,9 @@ export class HashManager {
 			if (stored) window.history.replaceState(null, '', stored);
 		}
 
-		const { mapView, styleKey, config, panelOpen, sources } = this.parseHash();
+		const { mapView, styleKey, config, panelOpen, sources, zooms } = this.parseHash();
 		this.currentSources = sources;
+		this.currentZooms = zooms;
 		this.currentStyleKey = styleKey;
 		this.currentConfigEncoded = config ? encodeConfig(config) : null;
 		this.currentPanelOpen = panelOpen ?? this.panel?.defaultOpen ?? false;
@@ -143,7 +155,20 @@ export class HashManager {
 			this.map.once('load', () => this.updateHash());
 		}
 
-		return { styleKey: this.currentStyleKey, config, panelOpen, sources: sources ?? undefined };
+		return {
+			styleKey: this.currentStyleKey,
+			config,
+			panelOpen,
+			sources: sources ?? undefined,
+			zooms: zooms ?? undefined,
+		};
+	}
+
+	/** The zoom ranges of layer groups changed; `null` for none. */
+	setZooms(zooms: string | null): void {
+		if (!this.zooms || zooms === this.currentZooms) return;
+		this.currentZooms = zooms;
+		this.updateHash();
 	}
 
 	/** The panel was opened or closed: the hash carries it, unless it is the styler's own default. */
@@ -188,6 +213,7 @@ export class HashManager {
 		config: Record<string, unknown> | null;
 		panelOpen: boolean | undefined;
 		sources: string | null;
+		zooms: string | null;
 	} {
 		const hash = window.location.hash.replace(/^#/, '');
 		if (!hash)
@@ -197,6 +223,7 @@ export class HashManager {
 				config: null,
 				panelOpen: undefined,
 				sources: null,
+				zooms: null,
 			};
 
 		const params = new Map<string, string>();
@@ -236,8 +263,9 @@ export class HashManager {
 
 		// A page that does not offer other sources is not told about them by a link either.
 		const sources = this.sources ? (params.get('sources') ?? null) : null;
+		const zooms = this.zooms ? (params.get('zooms') ?? null) : null;
 
-		return { mapView, styleKey, config, panelOpen, sources };
+		return { mapView, styleKey, config, panelOpen, sources, zooms };
 	}
 
 	private buildHash(): string {
@@ -272,6 +300,9 @@ export class HashManager {
 		if (this.currentConfigEncoded) {
 			parts.push(`config=${this.currentConfigEncoded}`);
 		}
+		if (this.currentZooms) {
+			parts.push(`zooms=${this.currentZooms}`);
+		}
 
 		return '#' + parts.join('&');
 	}
@@ -300,7 +331,7 @@ export class HashManager {
 		if (this.updating) return;
 		this.updating = true;
 
-		const { mapView, styleKey, config, panelOpen, sources } = this.parseHash();
+		const { mapView, styleKey, config, panelOpen, sources, zooms } = this.parseHash();
 
 		if (mapView) {
 			this.map.jumpTo({
@@ -314,6 +345,11 @@ export class HashManager {
 		if (this.sources && sources !== this.currentSources) {
 			this.currentSources = sources;
 			this.sources.onChange(sources);
+		}
+
+		if (this.zooms && zooms !== this.currentZooms) {
+			this.currentZooms = zooms;
+			this.zooms.onChange(zooms);
 		}
 
 		if (this.panel) {

@@ -8,6 +8,7 @@ import {
 	type ProvenanceMap,
 } from '@versatiles/style/migrate';
 import { decodeConfig } from './hash';
+import { METADATA_ZOOMS_KEY, parseLayerZooms, type LayerZooms } from '../style/zooms';
 import {
 	toStyleKey,
 	DEFAULT_STYLE_KEY,
@@ -53,6 +54,8 @@ export interface ImportResult {
 	 * styler exported. They say more than `origin`, and go before it.
 	 */
 	sources?: ChosenSources;
+	/** The zoom ranges of layer groups the import records: a styler link or a style.json it exported. */
+	layerZooms?: LayerZooms;
 }
 
 /** The exact paths report nothing: there was nothing to reconstruct. */
@@ -178,6 +181,7 @@ function parseLink(text: string): ImportOutcome | undefined {
 	const encoded = params.get('config');
 	const config = encoded ? decodeConfig(encoded) : {};
 	const sources = parseSources(decodeConfig(params.get('sources') ?? ''));
+	const layerZooms = parseLayerZooms(decodeConfig(params.get('zooms') ?? ''));
 	if (encoded && config === null) {
 		return {
 			ok: false,
@@ -193,6 +197,7 @@ function parseLink(text: string): ImportOutcome | undefined {
 			config: config ?? {},
 			...NOTHING_TO_REPORT,
 			...(sources ? { sources } : {}),
+			...(Object.keys(layerZooms).length > 0 ? { layerZooms } : {}),
 		},
 	};
 }
@@ -261,6 +266,14 @@ function fromGuess(guess: OptionsGuess): ImportOutcome {
 	};
 }
 
+/** The zoom ranges a style records, as a part of the import result; nothing when it records none. */
+function zoomsOf(style: StyleSpecification): { layerZooms?: LayerZooms } {
+	const layerZooms = parseLayerZooms(
+		(style.metadata as Record<string, unknown> | undefined)?.[METADATA_ZOOMS_KEY]
+	);
+	return Object.keys(layerZooms).length > 0 ? { layerZooms } : {};
+}
+
 /** A style.json: exact when it records its own options, reconstructed otherwise. */
 async function parseStyle(style: StyleSpecification): Promise<ImportOutcome> {
 	// A style this styler exported says what it was built from, so there is nothing to work out.
@@ -281,6 +294,7 @@ async function parseStyle(style: StyleSpecification): Promise<ImportOutcome> {
 				...NOTHING_TO_REPORT,
 				origin: base,
 				...(sources ? { sources } : {}),
+				...zoomsOf(style),
 			},
 		};
 	}

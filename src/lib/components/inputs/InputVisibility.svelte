@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { Snippet } from 'svelte';
 	import { opacityToValue, valueToOpacity, type LayerValue } from '../../options/layers';
 	import EditableValue from './EditableValue.svelte';
 	import InputRow from './InputRow.svelte';
@@ -6,6 +7,7 @@
 
 	let {
 		label,
+		hint,
 		name,
 		disabled = false,
 		value,
@@ -16,6 +18,8 @@
 		onToggle,
 	}: {
 		label: string;
+		/** What the group holds: an ⓘ after the label shows it. */
+		hint?: string | Snippet;
 		/** The group in the style, e.g. its path: the tooltip of the label. */
 		name?: string;
 		disabled?: boolean;
@@ -56,6 +60,7 @@
 
 <InputRow
 	{label}
+	{hint}
 	{name}
 	{disabled}
 	containerClass="visibility-container"

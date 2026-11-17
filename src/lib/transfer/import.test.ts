@@ -193,6 +193,16 @@ describe('parseImport: a style.json this styler wrote', () => {
 		});
 	});
 
+	it('reads the zoom ranges an exported style records', async () => {
+		const options = { theme: 'gray' as const };
+		const zooms = { land: { min: 6 }, 'roads.streets': { max: 15 } };
+		const style = {
+			...osm(options),
+			metadata: styleMetadata('osm', options, { 'seavektra:layerZooms': zooms }),
+		};
+		expect((await imported(JSON.stringify(style))).layerZooms).toEqual(zooms);
+	});
+
 	it('reads a recorded satellite style back as satellite', async () => {
 		const options = satellite.minimizeOptions({ raster: { opacity: 0.5 } });
 		const style = { ...satellite(options), metadata: styleMetadata('satellite', options) };

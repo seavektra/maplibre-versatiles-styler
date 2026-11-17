@@ -59,6 +59,14 @@
 	import { languageOptions } from '../options/languages';
 	import { onDestroy, untrack } from 'svelte';
 	import { decodeConfig, encodeConfig, HashManager, localHashStorage } from '../transfer/hash';
+	import {
+		applyLayerZooms,
+		groupZoomDefaults,
+		METADATA_ZOOMS_KEY,
+		parseLayerZooms,
+		tileLayerZooms,
+		type LayerZooms,
+	} from '../style/zooms';
 	import { provideFontPickerState } from './state/font_picker.svelte';
 	import { provideColorPickerState } from './state/color_picker.svelte';
 	import { labelTexts } from '../browser/map_labels';
@@ -261,6 +269,31 @@
 	let currentVectorDefaults = $derived(
 		isSatellite ? null : vectorDefaults(currentStyleKey as Palette)
 	);
+	/** The zoom ranges set for the vector style's layer groups, by group path. */
+	let layerZooms = $state<LayerZooms>({});
+	/**
+	 * The zoom range each layer group has as the library builds it, shown where no range is set. It
+	 * depends on the tiles' schema, not on colours or labels, so it is read off a default style.
+	 */
+	let defaultVectorStyle = $derived.by(() => {
+		const vector = vectorTileJSON;
+		if (!vector) return undefined;
+		return untrack(() =>
+			buildVectorStyle(
+				DEFAULT_STYLE_KEY as Palette,
+				vectorDefaults(DEFAULT_STYLE_KEY as Palette),
+				sourceConfig.assets,
+				{ schema, vector }
+			)
+		);
+	});
+	let zoomDefaults = $derived(
+		defaultVectorStyle ? groupZoomDefaults(defaultVectorStyle, vectorGroups.layerGroups) : {}
+	);
+	/** The zooms each tile layer is in the tiles at, for what each layer group's ⓘ lists. */
+	/** The layers of the vector style on the map, for what each layer group's ⓘ lists. */
+	let styleLayers = $state.raw<StyleSpecification['layers'] | undefined>();
+	let tileZooms = $derived(vectorTileJSON ? tileLayerZooms(vectorTileJSON) : {});
 
 	function setBaseStyle(key: StyleKey, hashConfig?: Record<string, unknown> | null) {
 		if (currentStyleKey !== key) {
@@ -312,11 +345,15 @@
 			if (landcoverTileJSON) stateSources.landcover = landcoverTileJSON;
 		}
 		return {
-			style: buildVectorStyle(
-				styleKey,
-				probeColors ? probeVectorState(state, probeColors) : state,
-				sourceConfig.assets,
-				stateSources
+			style: applyLayerZooms(
+				buildVectorStyle(
+					styleKey,
+					probeColors ? probeVectorState(state, probeColors) : state,
+					sourceConfig.assets,
+					stateSources
+				),
+				$state.snapshot(layerZooms) as LayerZooms,
+				vectorGroups.layerGroups
 			),
 			rendered: { styleKey, sources: sourceConfig, options: state },
 		};
@@ -365,6 +402,7 @@
 				setStyleOptions(rendered, next.rendered, styleLoaded)
 			);
 			rendered = next.rendered;
+			styleLayers = next.rendered.styleKey === 'satellite' ? undefined : next.style.layers;
 			hashManager?.setConfig(minimal);
 		});
 	});
@@ -513,12 +551,18 @@
 	 */
 	let exportStyle = $derived.by(() => {
 		const current = currentStyle();
-		return current
-			? styleForExport(current.style, currentStyleKey, minimal, schema, {
-					provider,
-					config: sourceConfig,
-				})
-			: undefined;
+		if (!current) return undefined;
+		const style = styleForExport(current.style, currentStyleKey, minimal, schema, {
+			provider,
+			config: sourceConfig,
+		});
+		// The ranges are in the layers already; the record lets Import restore the fields that set them.
+		const zooms = $state.snapshot(layerZooms) as LayerZooms;
+		if (isSatellite || Object.keys(zooms).length === 0) return style;
+		return {
+			...style,
+			metadata: { ...(style.metadata as object), [METADATA_ZOOMS_KEY]: zooms },
+		} as StyleSpecification;
 	});
 
 	function exportCode(target: 'npm' | 'browser') {
@@ -537,6 +581,7 @@
 		importOpen = false;
 		if (newSources) applySources(newSources);
 		setBaseStyle(result.styleKey, result.config);
+		layerZooms = result.layerZooms ?? {};
 		// Only the warnings are counted here: the notes are true of almost every import, and counting
 		// them would make a clean one look like it went badly.
 		const worth = result.diagnostics.filter((d) => d.severity === 'warning').length;
@@ -575,6 +620,10 @@
 		}));
 	}
 
+	function zoomsFromHash(encoded: string | null | undefined): LayerZooms {
+		return encoded ? parseLayerZooms(decodeConfig(encoded)) : {};
+	}
+
 	function sourcesFromHash(encoded: string | null | undefined): ChosenSources | undefined {
 		return encoded ? parseSources(decodeConfig(encoded)) : undefined;
 	}
@@ -594,13 +643,15 @@
 				otherSources
 					? { onChange: (encoded) => applySources(sourcesFromHash(encoded) ?? ownSources()) }
 					: undefined,
+				{ onChange: (encoded) => (layerZooms = zoomsFromHash(encoded)) },
 				config.persist
 					? localHashStorage(
 							typeof config.persist === 'string' ? config.persist : 'versatiles-styler'
 						)
 					: undefined
 			);
-			const { styleKey, config: hashConfig, panelOpen, sources } = hashManager.initialize();
+			const { styleKey, config: hashConfig, panelOpen, sources, zooms } = hashManager.initialize();
+			layerZooms = zoomsFromHash(zooms);
 			if (panelOpen !== undefined) paneOpen = panelOpen;
 			const hashSources = sourcesFromHash(sources);
 			if (hashSources) applySources(hashSources);
@@ -612,6 +663,11 @@
 
 	// Opening and closing the panel is part of the shared state: a link shows the map as it was left.
 	$effect(() => hashManager?.setPanelOpen(paneOpen));
+	// And so are the zoom ranges of the layer groups.
+	$effect(() => {
+		const zooms = $state.snapshot(layerZooms) as LayerZooms;
+		hashManager?.setZooms(Object.keys(zooms).length > 0 ? encodeConfig(zooms) : null);
+	});
 	// And so are the tile sources, unless they are the page's own.
 	$effect(() => {
 		const chosen = { provider, config: sourceConfig };
@@ -763,6 +819,10 @@
 				hasLandcover={landcoverAvailable(loadedSources)}
 				fontFaces={sources.fontFaces()}
 				{languages}
+				bind:zooms={layerZooms}
+				{zoomDefaults}
+				{tileZooms}
+				{styleLayers}
 			/>
 		{/if}
 		<!-- The project itself, which is neither the map nor the style: out of the action rows. -->

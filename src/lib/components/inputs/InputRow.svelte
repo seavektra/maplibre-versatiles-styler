@@ -18,7 +18,7 @@
 	}: {
 		label: string;
 		/** An explanation of the setting: an ⓘ after the label shows it as a tooltip. */
-		hint?: string;
+		hint?: string | Snippet;
 		/** What the row stands for in the style, e.g. an option key: the tooltip of the label. */
 		name?: string;
 		containerClass: string;
