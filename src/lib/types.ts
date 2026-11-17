@@ -22,6 +22,12 @@ export interface VersaTilesStylerConfig {
 	 */
 	archives?: { name: string; url: string }[];
 	/**
+	 * Keep the styler's state (style, options, tile sources, view) in the browser's `localStorage`,
+	 * and restore it when the page opens without a hash. `true` uses the key `versatiles-styler`; a
+	 * string is the key. Needs `hash`. Default: `false`.
+	 */
+	persist?: boolean | string;
+	/**
 	 * MapLibre's `addProtocol`, with which the styler registers the `pmtiles://` protocol. Without it,
 	 * `externalSources` leaves out the tiles that come as a PMTiles archive, such as Protomaps.
 	 */

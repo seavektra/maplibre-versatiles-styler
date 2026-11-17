@@ -58,7 +58,7 @@
 	import { registerPMTiles } from '../style/pmtiles';
 	import { languageOptions } from '../options/languages';
 	import { onDestroy, untrack } from 'svelte';
-	import { decodeConfig, encodeConfig, HashManager } from '../transfer/hash';
+	import { decodeConfig, encodeConfig, HashManager, localHashStorage } from '../transfer/hash';
 	import { provideFontPickerState } from './state/font_picker.svelte';
 	import { provideColorPickerState } from './state/color_picker.svelte';
 	import { labelTexts } from '../browser/map_labels';
@@ -593,6 +593,11 @@
 				// A page that offers no other sources has none to keep in a link.
 				otherSources
 					? { onChange: (encoded) => applySources(sourcesFromHash(encoded) ?? ownSources()) }
+					: undefined,
+				config.persist
+					? localHashStorage(
+							typeof config.persist === 'string' ? config.persist : 'versatiles-styler'
+						)
 					: undefined
 			);
 			const { styleKey, config: hashConfig, panelOpen, sources } = hashManager.initialize();

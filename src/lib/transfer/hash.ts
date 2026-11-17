@@ -44,12 +44,39 @@ export interface SourcesHash {
 	onChange: (sources: string | null) => void;
 }
 
+/** Reads and writes the last hash a page had, so that opening it again without a hash restores it. */
+export interface HashStorage {
+	load(): string | null;
+	save(hash: string): void;
+}
+
+/** The hash kept in the browser's `localStorage` under a key. Storage that refuses is no storage. */
+export function localHashStorage(key: string): HashStorage {
+	return {
+		load: () => {
+			try {
+				return window.localStorage.getItem(key);
+			} catch {
+				return null;
+			}
+		},
+		save: (hash) => {
+			try {
+				window.localStorage.setItem(key, hash);
+			} catch {
+				// Private mode or a full quota: the hash still works, it is just not kept.
+			}
+		},
+	};
+}
+
 export class HashManager {
 	private map: MLGLMap;
 	private onStyleChange: (key: StyleKey, config: Record<string, unknown> | null) => void;
 	private panel: PanelHash | undefined;
 	private sources: SourcesHash | undefined;
 	private currentSources: string | null = null;
+	private storage: HashStorage | undefined;
 	private currentStyleKey: StyleKey = DEFAULT_STYLE_KEY;
 	private currentConfigEncoded: string | null = null;
 	private currentPanelOpen = false;
@@ -63,12 +90,14 @@ export class HashManager {
 		map: MLGLMap,
 		onStyleChange: (key: StyleKey, config: Record<string, unknown> | null) => void,
 		panel?: PanelHash,
-		sources?: SourcesHash
+		sources?: SourcesHash,
+		storage?: HashStorage
 	) {
 		this.map = map;
 		this.onStyleChange = onStyleChange;
 		this.panel = panel;
 		this.sources = sources;
+		this.storage = storage;
 		this.boundOnMoveEnd = () => this.onMoveEnd();
 		this.boundOnHashChange = () => this.onHashChange();
 	}
@@ -82,6 +111,12 @@ export class HashManager {
 		sources: string | undefined;
 	} {
 		this.tryDisableMapHash();
+
+		// A page opened without a hash starts where it was left.
+		if (this.storage && window.location.hash.replace(/^#/, '') === '') {
+			const stored = this.storage.load();
+			if (stored) window.history.replaceState(null, '', stored);
+		}
 
 		const { mapView, styleKey, config, panelOpen, sources } = this.parseHash();
 		this.currentSources = sources;
@@ -249,7 +284,9 @@ export class HashManager {
 		this.throttleTimer = setTimeout(() => {
 			this.throttleTimer = null;
 			this.updating = true;
-			window.history.replaceState(null, '', this.buildHash());
+			const hash = this.buildHash();
+			window.history.replaceState(null, '', hash);
+			this.storage?.save(hash);
 			this.updating = false;
 		}, THROTTLE_MS);
 	}

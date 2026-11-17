@@ -15,6 +15,7 @@ ChartManager's admin UI embeds it on the Basemap styler page (`/styling/basemap`
 | `.github/workflows/seavektra-release.yml`                      | Builds a tag `v<upstream version>-sv.<n>` and attaches `dist/maplibre-versatiles-styler.js` (ES module) and its `.d.ts` to a GitHub release.                                                                                 |
 | `.github/workflows/release.yml` ignores `v*-sv.*` tags         | Upstream's workflow publishes to npm; our tags must never reach it.                                                                                                                                                          |
 | `archives` option: a **PMTiles file** provider in Tile sources | ChartManager offers the PMTiles archives it serves. The picked file is the map's only tiles (no satellite, elevation or land cover from a server) and the map moves to its bounds; fonts and icons still come from `origin`. |
+| `persist` option                                               | Keeps the whole hash (style, options, sources, view) in `localStorage` and restores it when the page opens without a hash.                                                                                                   |
 | This file                                                      |                                                                                                                                                                                                                              |
 
 ## Merging upstream
