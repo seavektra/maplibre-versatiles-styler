@@ -16,6 +16,12 @@ export interface VersaTilesStylerConfig {
 	 */
 	externalSources?: boolean;
 	/**
+	 * PMTiles archives the page has, offered in the sidebar as a provider of their own: the archive
+	 * picked there is the only tiles the map draws, and the map moves to its bounds. Fonts and icons
+	 * still come from `origin`. Each has a name to list it by and its address. Needs `addProtocol`.
+	 */
+	archives?: { name: string; url: string }[];
+	/**
 	 * MapLibre's `addProtocol`, with which the styler registers the `pmtiles://` protocol. Without it,
 	 * `externalSources` leaves out the tiles that come as a PMTiles archive, such as Protomaps.
 	 */

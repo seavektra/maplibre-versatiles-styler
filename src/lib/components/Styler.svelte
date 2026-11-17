@@ -39,6 +39,7 @@
 		type RenderedFeature,
 	} from '../style/inspect';
 	import {
+		archiveSources,
 		fetchTilesetIndex,
 		loadSources,
 		openFreeMapSources,
@@ -109,18 +110,31 @@
 	const pmtiles = untrack(() => config.addProtocol);
 	if (pmtiles) registerPMTiles(pmtiles);
 
-	const PROVIDERS: { value: Provider; label: string }[] = untrack(() =>
-		config.externalSources
+	/** The PMTiles archives the page offers, which only a map that reads PMTiles can draw. */
+	const archives = untrack(() => (pmtiles ? (config.archives ?? []) : []));
+
+	const PROVIDERS: { value: Provider; label: string }[] = untrack(() => [
+		{ value: 'versatiles', label: 'VersaTiles' },
+		...(archives.length > 0 ? [{ value: 'archive' as const, label: 'PMTiles file' }] : []),
+		...(config.externalSources
 			? [
-					{ value: 'versatiles', label: 'VersaTiles' },
-					{ value: 'openfreemap', label: 'OpenFreeMap' },
+					{ value: 'openfreemap' as const, label: 'OpenFreeMap' },
 					...(pmtiles ? [{ value: 'protomaps' as const, label: 'Protomaps' }] : []),
-					{ value: 'custom', label: 'Custom' },
+					{ value: 'custom' as const, label: 'Custom' },
 				]
-			: [{ value: 'versatiles', label: 'VersaTiles' }]
-	);
+			: []),
+	]);
+	/** Whether the sidebar offers other sources than the page's own server, and links keep them. */
+	const otherSources = PROVIDERS.length > 1;
+
+	/** The name of the archive the sources draw, if they are one the page offers. */
+	function archiveName(source: SourceConfig): string | undefined {
+		return archives.find((archive) => archiveSources(archive.url, '').vector === source.vector)
+			?.name;
+	}
 
 	let sourcesLabel = $derived.by(() => {
+		if (provider === 'archive') return archiveName(sourceConfig) ?? 'PMTiles file';
 		if (provider !== 'versatiles') {
 			return PROVIDERS.find((option) => option.value === provider)?.label ?? provider;
 		}
@@ -135,15 +149,33 @@
 	function providerSources(next: Provider): SourceConfig {
 		if (next === 'openfreemap') return openFreeMapSources();
 		if (next === 'protomaps') return protomapsSources();
+		if (next === 'archive') return archiveSources(archives[0].url, ownAssets());
 		if (next === 'custom') return sourceConfig;
 		return ownServer(config.origin ?? window.location.origin);
+	}
+
+	/** The server of the page's fonts and icons, which an archive has none of. */
+	function ownAssets(): string {
+		return ownServer(config.origin ?? window.location.origin).assets;
 	}
 
 	function setProvider(next: Provider) {
 		leftSources[provider] = sourceConfig;
 		provider = next;
-		setSourceConfig(leftSources[next] ?? providerSources(next));
+		const sources = leftSources[next] ?? providerSources(next);
+		if (next === 'archive') fitArchive = sources.vector;
+		setSourceConfig(sources);
 	}
+
+	/** Sources chosen in the sidebar. Picking another archive moves the map to it. */
+	function chooseSources(next: SourceConfig) {
+		if (provider === 'archive' && next.vector !== sourceConfig.vector) fitArchive = next.vector;
+		setSourceConfig(next);
+	}
+
+	// The archive the map is to move to once its bounds are known: one picked in the sidebar, not one a
+	// link opens with, which keeps the view the link has.
+	let fitArchive: string | undefined;
 	let paneOpen = $state(untrack(() => config.open ?? false));
 
 	// ── Sources ──────────────────────────────────────────────────────────────────
@@ -187,6 +219,18 @@
 		current.elevation.then((tj) => !outdated && (elevationTileJSON = tj));
 		current.landcover.then((tj) => !outdated && (landcoverTileJSON = tj));
 		return () => (outdated = true);
+	});
+
+	// A picked archive opens on its bounds, which its header gives.
+	$effect(() => {
+		const bounds = vectorTileJSON?.bounds;
+		if (fitArchive === undefined || sourceConfig.vector !== fitArchive || !vectorTileJSON) return;
+		fitArchive = undefined;
+		if (bounds)
+			map.fitBounds(
+				[bounds.slice(0, 2), bounds.slice(2, 4)] as [[number, number], [number, number]],
+				{ animate: false }
+			);
 	});
 
 	// Vector themes are listed until the OSM TileJSON turns out to be missing; satellite once it loaded.
@@ -547,7 +591,7 @@
 					onChange: (open) => (paneOpen = open),
 				},
 				// A page that offers no other sources has none to keep in a link.
-				config.externalSources
+				otherSources
 					? { onChange: (encoded) => applySources(sourcesFromHash(encoded) ?? ownSources()) }
 					: undefined
 			);
@@ -659,13 +703,15 @@
 		</div>
 		<h4 class="section-group">Setup</h4>
 		<SidebarSection
-			title={config.externalSources ? 'Tile sources' : 'Tile server'}
+			title={otherSources ? 'Tile sources' : 'Tile server'}
 			value={sourcesLabel}
 			description={provider === 'versatiles'
 				? 'The server the tiles, fonts and icons come from.'
-				: provider === 'custom'
-					? 'Tiles from any server, by the address of a TileJSON or a PMTiles archive.'
-					: 'Where the tiles come from. Fonts and icons are those of tiles.versatiles.org.'}
+				: provider === 'archive'
+					? `A PMTiles file of this page. The map shows only its tiles; fonts and icons come from ${sourceConfig.assets}.`
+					: provider === 'custom'
+						? 'Tiles from any server, by the address of a TileJSON or a PMTiles archive.'
+						: 'Where the tiles come from. Fonts and icons are those of tiles.versatiles.org.'}
 		>
 			<SourceOptions
 				{provider}
@@ -678,9 +724,10 @@
 					landcover: landcoverTileJSON,
 				}}
 				pmtiles={pmtiles !== undefined}
+				{archives}
 				server={ownServer}
 				onprovider={setProvider}
-				onconfig={setSourceConfig}
+				onconfig={chooseSources}
 			/>
 		</SidebarSection>
 		<h4 class="section-group">Style</h4>

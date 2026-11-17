@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { archiveUrl, isPMTilesUrl } from '../../style/pmtiles';
+	import { archiveUrl, isPMTilesUrl, pmtilesUrl } from '../../style/pmtiles';
 	import {
 		sourceStatus,
 		sourceUrl,
@@ -21,6 +21,7 @@
 		config,
 		tileJSONs,
 		pmtiles,
+		archives = [],
 		server,
 		onprovider,
 		onconfig,
@@ -33,6 +34,8 @@
 		tileJSONs: Record<SourceName, LoadedTileJSON | undefined>;
 		/** Whether the map can read PMTiles archives. */
 		pmtiles: boolean;
+		/** The PMTiles archives the page offers, by name and address. */
+		archives?: { name: string; url: string }[];
 		/** The sources of the VersaTiles server at an origin. */
 		server: (origin: string) => SourceConfig;
 		onprovider: (provider: Provider) => void;
@@ -141,6 +144,30 @@
 	{@render found('elevation', 'Elevation', 'Not on this server')}
 	{#if shortbread}
 		{@render found('landcover', 'Land cover', 'Not on this server')}
+	{/if}
+{:else if provider === 'archive'}
+	<InputSelect
+		label="File"
+		bind:value={
+			() => config.vector ?? '', (url) => onconfig({ vector: url ?? '', assets: config.assets })
+		}
+		defaultValue={undefined}
+		modified={false}
+		options={archives.map((archive) => ({ value: pmtilesUrl(archive.url), label: archive.name }))}
+	/>
+	{@render found('vector', 'Vector tiles', '')}
+	{#if schemaUnknown}
+		<InputSelect
+			label="Schema"
+			hint="The layers of these tiles do not tell their schema. The style is built for the one chosen here."
+			bind:value={
+				() => config.schema ?? 'shortbread',
+				(schema) => onconfig({ ...config, schema: schema as VectorSchema })
+			}
+			defaultValue={undefined}
+			modified={false}
+			options={SCHEMA_OPTIONS}
+		/>
 	{/if}
 {:else if provider === 'custom'}
 	{@render address('vector', 'Vector tiles', 'TileJSON or PMTiles address')}
