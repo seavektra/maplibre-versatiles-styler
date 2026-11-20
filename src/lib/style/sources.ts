@@ -20,8 +20,24 @@ export interface SourceConfig {
 	 * tiles that carry it themselves need none.
 	 */
 	landcover?: string;
+	/**
+	 * Vector tiles of the same schema from a server, drawn instead of `vector` from zoom `from` on: the
+	 * offline archive below, the online tiles above (see `splitByZoom`).
+	 */
+	online?: OnlineTiles;
 	assets: string;
 }
+
+/** The online tiles a base map switches to, and the zoom it switches at. */
+export interface OnlineTiles {
+	/** The address of their TileJSON. */
+	vector: string;
+	from: number;
+}
+
+/** The zooms a base map can switch to its online tiles at. */
+export const ONLINE_FROM_MIN = 1;
+export const ONLINE_FROM_MAX = 22;
 
 /** The vector tile schemas the styler has a style for. */
 export type VectorSchema = 'shortbread' | 'openmaptiles' | 'protomaps';
@@ -50,6 +66,8 @@ export interface LoadedSources {
 	readonly satellite: Promise<LoadedTileJSON>;
 	readonly elevation: Promise<LoadedTileJSON>;
 	readonly landcover: Promise<LoadedTileJSON>;
+	/** The online tiles above the vector tiles, `null` when there are none or they failed. */
+	readonly online: Promise<LoadedTileJSON>;
 	/** The font faces the assets server publishes; fetched on the first call only. */
 	fontFaces(): Promise<FontFaceInfo[] | undefined>;
 }
@@ -232,8 +250,7 @@ export function loadSources(config: SourceConfig, settled?: Promise<SourceConfig
 		name === 'landcover'
 			? osm.supportsLandcover(tileJSON)
 			: 'vector_layers' in tileJSON === (name === 'vector');
-	const load = (name: SourceName): Promise<LoadedTileJSON> => {
-		const url = config[name];
+	const load = (name: SourceName, url = config[name]): Promise<LoadedTileJSON> => {
 		if (url === undefined) return Promise.resolve(null);
 		return (isPMTilesUrl(url) ? loadArchiveTileJSON(url) : fetchTileJSON(url))
 			.then((tileJSON) =>
@@ -254,6 +271,11 @@ export function loadSources(config: SourceConfig, settled?: Promise<SourceConfig
 		return settledConfig[name] === url ? null : new Promise<never>(() => {});
 	};
 
+	const loadOnline = (url: string): Promise<LoadedTileJSON> =>
+		fetchTileJSON(url)
+			.then((tileJSON) => (fits('vector', tileJSON) ? tileJSON : null))
+			.catch(() => null);
+
 	let fontFaces: Promise<FontFaceInfo[] | undefined> | undefined;
 
 	return {
@@ -262,8 +284,19 @@ export function loadSources(config: SourceConfig, settled?: Promise<SourceConfig
 		satellite: load('satellite'),
 		elevation: load('elevation'),
 		landcover: load('landcover'),
+		// Online tiles are vector tiles, and the list of a server's tilesets never moves them.
+		online: config.online ? loadOnline(config.online.vector) : Promise.resolve(null),
 		fontFaces: () => (fontFaces ??= fetchFontFaces({ base: config.assets }).catch(() => undefined)),
 	};
+}
+
+/**
+ * Where a source's tiles are, and the zooms the style reads of them, for a row that shows both; `used`
+ * is `undefined` when the style reads none.
+ */
+export interface UsedZooms {
+	where: string;
+	used?: [number, number];
 }
 
 /** What a row of the tile sources says about its source. */
@@ -293,7 +326,8 @@ export function sourceStatus(
 	name: SourceName,
 	url: string | undefined,
 	tileJSON: LoadedTileJSON | undefined,
-	schema?: VectorSchema
+	schema?: VectorSchema,
+	zooms?: UsedZooms
 ): SourceStatus {
 	if (url === undefined) return { state: 'none', text: 'None' };
 	if (tileJSON === undefined) return { state: 'loading', text: 'Loading…' };
@@ -312,7 +346,13 @@ export function sourceStatus(
 		parts.push(known ? SCHEMA_LABELS[known] : 'Unknown schema');
 	}
 	if (tileJSON.maxzoom !== undefined) {
-		parts.push(`zoom ${tileJSON.minzoom ?? 0}–${tileJSON.maxzoom}`);
+		const range = `z${tileJSON.minzoom ?? 0}–${tileJSON.maxzoom}`;
+		if (zooms) {
+			parts.push(`${zooms.where} ${range}`);
+			parts.push(zooms.used ? `used z${zooms.used[0]}–${zooms.used[1]}` : 'not used');
+		} else {
+			parts.push(`zoom ${tileJSON.minzoom ?? 0}–${tileJSON.maxzoom}`);
+		}
 	}
 	if (name === 'vector') {
 		const languages = osm.languages(tileJSON).length;
@@ -367,6 +407,18 @@ export function parseSources(value: unknown): ChosenSources | undefined {
 	}
 	const schema = text('schema');
 	if (schema && isVectorSchema(schema)) config.schema = schema;
+	const online = parseOnline(data.online);
+	if (online) config.online = online;
 	const provider = PROVIDER_NAMES.find((name) => name === data.provider);
 	return { provider: provider ?? providerOf(config), config };
+}
+
+/** Online tiles from data that may come from anywhere; `undefined` for anything else. */
+function parseOnline(value: unknown): OnlineTiles | undefined {
+	if (value === null || typeof value !== 'object' || Array.isArray(value)) return undefined;
+	const { vector, from } = value as Record<string, unknown>;
+	if (typeof vector !== 'string' || vector === '') return undefined;
+	if (typeof from !== 'number' || !Number.isInteger(from)) return undefined;
+	if (from < ONLINE_FROM_MIN || from > ONLINE_FROM_MAX) return undefined;
+	return { vector, from };
 }

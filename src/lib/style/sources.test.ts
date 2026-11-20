@@ -502,3 +502,50 @@ describe('vectorSchema', () => {
 		).toBeUndefined();
 	});
 });
+
+describe('online tiles above an archive', () => {
+	const archive = {
+		...archiveSources('https://example.org/tilesets/planet.pmtiles', 'https://tiles.example.org'),
+		online: { vector: 'https://tiles.example.org/tiles/osm-vector/tiles.json', from: 9 },
+	};
+
+	it('are kept in serialized sources and read back', () => {
+		const parsed = parseSources(serializeSources({ provider: 'archive', config: archive }));
+		expect(parsed).toEqual({ provider: 'archive', config: archive });
+	});
+
+	it.each([
+		['no address', { from: 9 }],
+		['a zoom that is not whole', { vector: 'https://x/tiles.json', from: 8.5 }],
+		['a zoom out of range', { vector: 'https://x/tiles.json', from: 0 }],
+		['not an object', 'https://x/tiles.json'],
+	])('are left out with %s', (_, online) => {
+		const parsed = parseSources({ provider: 'archive', ...archive, online });
+		expect(parsed?.config.online).toBeUndefined();
+	});
+});
+
+describe('sourceStatus with the zooms in use', () => {
+	const tileJSON = {
+		tilejson: '3.0.0',
+		tiles: ['https://x/{z}/{x}/{y}'],
+		vector_layers: [{ id: 'streets', fields: {} }],
+		minzoom: 0,
+		maxzoom: 14,
+	} as unknown as TileJSONSpecification;
+
+	it('says where the tiles are and which zooms are read', () => {
+		const status = sourceStatus('vector', 'https://x', tileJSON, 'shortbread', {
+			where: 'in file',
+			used: [0, 8],
+		});
+		expect(status.text).toBe('Shortbread · in file z0–14 · used z0–8');
+	});
+
+	it('says when none are read', () => {
+		const status = sourceStatus('vector', 'https://x', tileJSON, 'shortbread', {
+			where: 'on server',
+		});
+		expect(status.text).toBe('Shortbread · on server z0–14 · not used');
+	});
+});

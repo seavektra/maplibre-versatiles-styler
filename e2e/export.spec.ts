@@ -39,8 +39,31 @@ test('closes on Escape and on the close button', async ({ page }) => {
 	await expect(dialog(page)).toBeHidden();
 });
 
+test('downloads the style for the SeaVektra app by default', async ({ page }) => {
+	const panel = await openExport(page);
+
+	const [download] = await Promise.all([
+		page.waitForEvent('download'),
+		panel.getByRole('button', { name: 'Download' }).click(),
+	]);
+
+	expect(download.suggestedFilename()).toBe('app-style.json');
+
+	const content = await (await download.createReadStream()).toArray();
+	const json = JSON.parse(Buffer.concat(content).toString());
+
+	// The app swaps in its own archive and reads the zoom range from it.
+	expect(json.sources['versatiles-shortbread']).toMatchObject({
+		type: 'vector',
+		url: '{BASE_MAP_URL}',
+	});
+	expect(json.sources['versatiles-shortbread'].maxzoom).toBeUndefined();
+	expect(json.glyphs).toBeUndefined();
+});
+
 test('downloads a self-contained style.json', async ({ page }) => {
 	const panel = await openExport(page);
+	await panel.getByRole('radio', { name: 'MapLibre' }).click();
 
 	const [download] = await Promise.all([
 		page.waitForEvent('download'),

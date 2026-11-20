@@ -11,6 +11,7 @@
  */
 
 import type { LayerGroupMap, StyleSpecification, TextGroupMap } from '@versatiles/style';
+import { offlineLayerId } from './online';
 
 /** A group map as the library publishes it: nested groups, with the layer IDs at the leaves. */
 type GroupTree = { [key: string]: string[] | GroupTree };
@@ -157,8 +158,10 @@ export interface InspectResult {
  */
 const LANDCOVER_PREFIX = 'landcover-';
 
-/** The group path of a layer, or of the fill a land cover fill copies. */
-export function groupOf(groups: GroupIndex, id: string): string[] | undefined {
+/** The group path of a layer, or of the layer an online or land cover layer copies. */
+export function groupOf(groups: GroupIndex, layerId: string): string[] | undefined {
+	// The online copy of a layer (see `splitByZoom`) is in the group of the layer it copies.
+	const id = offlineLayerId(layerId);
 	return (
 		groups.get(id) ??
 		(id.startsWith(LANDCOVER_PREFIX) ? groups.get(id.slice(LANDCOVER_PREFIX.length)) : undefined)
@@ -195,14 +198,14 @@ export function describeFeatures(
 		const { id, type, paint } = feature.layer;
 		if (seen.has(id)) continue;
 		seen.add(id);
-		const keys = indexes.colors.get(id) ?? {};
+		const keys = indexes.colors.get(offlineLayerId(id)) ?? {};
 		const properties = Object.keys(paint ?? {}).filter((property) => property.includes('color'));
 		described.push({
 			id,
 			type,
 			sourceLayer: feature.sourceLayer,
 			group: groupOf(indexes.groups, id),
-			topic: indexes.topics.get(id),
+			topic: indexes.topics.get(offlineLayerId(id)),
 			// A property with no key still belongs in the list: it says the color is the layer's own.
 			colors: properties.map((property) => ({ property, key: keys[property] })),
 			properties: feature.properties ?? {},

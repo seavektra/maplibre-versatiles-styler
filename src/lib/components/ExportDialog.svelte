@@ -4,6 +4,7 @@
 	import CodeBlock from './CodeBlock.svelte';
 	import { downloadStyle, styleJson, type JsonFormat } from '../transfer/export';
 	import { APP_SOURCE_URL, appStyle } from '../transfer/app_style';
+	import { onlineSplit } from '../style/online';
 	import { DOCS } from '../transfer/docs';
 
 	let {
@@ -29,8 +30,8 @@
 
 	let tab = $state<Tab>('json');
 	let format = $state<JsonFormat>('pretty');
-	/** Who the style.json is for: any MapLibre page, or the SeaVektra app's base map. */
-	let audience = $state<'web' | 'app'>('web');
+	/** Who the style.json is for: the SeaVektra app's base map (the default), or any MapLibre page. */
+	let audience = $state<'web' | 'app'>('app');
 	let target = $state<'npm' | 'browser'>('npm');
 
 	// Stringifying a large style is not free, so it happens for the tab actually being looked at.
@@ -42,6 +43,8 @@
 	);
 	/** The style as downloaded: as built, or rewritten for the SeaVektra app. */
 	let output = $derived(style && audience === 'app' ? appStyle(style) : style);
+	/** Where the style switches from the archive to online tiles, if it does. */
+	let online = $derived(style ? onlineSplit(style) : undefined);
 	let filename = $derived(audience === 'app' ? 'app-style.json' : 'style.json');
 	let json = $derived(tab === 'json' && output ? styleJson(output, format) : '');
 	// The choice is the user's as long as the style has that form.
@@ -130,6 +133,12 @@
 					elevation are left out, labels use the app's Open Sans, and the app provides glyphs and
 					icons.
 				</p>
+				{#if online}
+					<p class="dialog-note">
+						From zoom {online.from} on the base map comes from the <strong>online tiles</strong>,
+						which stay as they are: the app needs a connection there.
+					</p>
+				{/if}
 			{:else if pmtiles}
 				<p class="dialog-note">
 					This style reads its tiles from a <strong>PMTiles archive</strong>. The page that uses it
@@ -143,8 +152,8 @@
 						'Who the style is for',
 						audience,
 						[
-							{ value: 'web', label: 'MapLibre' },
 							{ value: 'app', label: 'SeaVektra app' },
+							{ value: 'web', label: 'MapLibre' },
 						],
 						(value) => (audience = value as 'web' | 'app')
 					)}
