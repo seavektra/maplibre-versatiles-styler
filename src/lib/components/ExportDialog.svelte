@@ -3,6 +3,7 @@
 	import Modal from './Modal.svelte';
 	import CodeBlock from './CodeBlock.svelte';
 	import { downloadStyle, styleJson, type JsonFormat } from '../transfer/export';
+	import { APP_SOURCE_URL, appStyle } from '../transfer/app_style';
 	import { DOCS } from '../transfer/docs';
 
 	let {
@@ -28,6 +29,8 @@
 
 	let tab = $state<Tab>('json');
 	let format = $state<JsonFormat>('pretty');
+	/** Who the style.json is for: any MapLibre page, or the SeaVektra app's base map. */
+	let audience = $state<'web' | 'app'>('web');
 	let target = $state<'npm' | 'browser'>('npm');
 
 	// Stringifying a large style is not free, so it happens for the tab actually being looked at.
@@ -37,7 +40,10 @@
 			((source as { tiles?: string[] }).tiles ?? []).some((url) => url.startsWith('pmtiles://'))
 		)
 	);
-	let json = $derived(tab === 'json' && style ? styleJson(style, format) : '');
+	/** The style as downloaded: as built, or rewritten for the SeaVektra app. */
+	let output = $derived(style && audience === 'app' ? appStyle(style) : style);
+	let filename = $derived(audience === 'app' ? 'app-style.json' : 'style.json');
+	let json = $derived(tab === 'json' && output ? styleJson(output, format) : '');
 	// The choice is the user's as long as the style has that form.
 	let usedTarget = $derived(targets.includes(target) ? target : targets[0]);
 	let snippet = $derived(tab === 'code' ? code(usedTarget) : '');
@@ -116,13 +122,33 @@
 					>What is in a style.json?</a
 				>
 			</p>
-			{#if pmtiles}
+			{#if audience === 'app'}
+				<p class="dialog-note">
+					For the <strong>SeaVektra app</strong>: the base map source reads from
+					<code>{APP_SOURCE_URL}</code>, which the app replaces with its bundled archive, and has no
+					zoom range of its own, so MapLibre takes it from the archive. Land cover, satellite and
+					elevation are left out, labels use the app's Open Sans, and the app provides glyphs and
+					icons.
+				</p>
+			{:else if pmtiles}
 				<p class="dialog-note">
 					This style reads its tiles from a <strong>PMTiles archive</strong>. The page that uses it
 					has to register the <code>pmtiles</code> protocol with MapLibre.
 				</p>
 			{/if}
 			{#if style}
+				<div class="dialog-choice">
+					<span class="dialog-choice-label">For</span>
+					{@render segmented(
+						'Who the style is for',
+						audience,
+						[
+							{ value: 'web', label: 'MapLibre' },
+							{ value: 'app', label: 'SeaVektra app' },
+						],
+						(value) => (audience = value as 'web' | 'app')
+					)}
+				</div>
 				<div class="dialog-choice">
 					<span class="dialog-choice-label">Format</span>
 					{@render segmented(
@@ -137,9 +163,9 @@
 				</div>
 				<CodeBlock
 					code={json}
-					label="style.json"
-					filename="style.json"
-					ondownload={() => style && downloadStyle(style, format)}
+					label={filename}
+					{filename}
+					ondownload={() => output && downloadStyle(output, format, filename)}
 				/>
 			{:else}
 				<p class="dialog-note">The style is still loading.</p>

@@ -44,8 +44,12 @@ export function downloadText(text: string, filename: string, type = 'application
 	URL.revokeObjectURL(url);
 }
 
-export function downloadStyle(style: StyleSpecification, format: JsonFormat = 'pretty'): void {
-	downloadText(styleJson(style, format), 'style.json');
+export function downloadStyle(
+	style: StyleSpecification,
+	format: JsonFormat = 'pretty',
+	filename = 'style.json'
+): void {
+	downloadText(styleJson(style, format), filename);
 }
 
 /** Copies `text` to the clipboard. Says nothing itself — the caller reports it. */
