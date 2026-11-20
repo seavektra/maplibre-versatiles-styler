@@ -120,9 +120,12 @@ describe('appStyle of a style split by zoom', () => {
 		vector_layers: [],
 		maxzoom: 14,
 	};
+	const switchAll = new Map(
+		['water-area', 'street', 'label-place-city'].map((id) => [id, 'switch' as const])
+	);
 
 	it('keeps the online source as it is, and the archive behind the placeholder', () => {
-		const style = appStyle(splitByZoom(exported(), online as never, 9));
+		const style = appStyle(splitByZoom(exported(), online as never, 9, switchAll));
 		expect(style.sources['versatiles-shortbread']).toEqual({
 			type: 'vector',
 			url: APP_SOURCE_URL,
@@ -137,17 +140,24 @@ describe('appStyle of a style split by zoom', () => {
 		expect(Object.keys(style.sources)).toHaveLength(2);
 	});
 
-	it('keeps both copies of each layer, and still drops the land cover', () => {
-		const ids = appStyle(splitByZoom(exported(), online as never, 9)).layers.map((l) => l.id);
+	it('keeps every copy of each layer, and still drops the land cover', () => {
+		const ids = appStyle(splitByZoom(exported(), online as never, 9, switchAll)).layers.map(
+			(l) => l.id
+		);
 		expect(ids).toEqual([
 			'background',
 			'versatiles-shortbread-online-preload',
 			'water-area',
+			'water-area-overlap',
 			'water-area-online',
+			'water-area-fallback',
 			'street',
+			'street-overlap',
 			'street-online',
+			'street-fallback',
 			'label-place-city',
 			'label-place-city-online',
+			'label-place-city-fallback',
 		]);
 	});
 });

@@ -1,13 +1,14 @@
 import type { LayerGroupMap } from '@versatiles/style';
 import type { StyleSpecification } from 'maplibre-gl';
-import { baseMapSourceId } from './online';
+import { baseMapSourceId } from './base_map_source';
 import { layerIdsOfGroup } from './zooms';
 
 /**
  * Which copy of the base map a layer is drawn from: the offline archive only (`offline`), the online
- * tiles only (`online`), or both with a cross-fade at the switch zoom (`switch`). `auto` sets nothing:
- * on a group it means "inherit the nearest parent's role", and the zoom rule (offline below the switch
- * zoom, online from it) applies only when no ancestor sets a role.
+ * tiles only (`online`), or both, the online copy fading in over the offline one at the switch zoom
+ * (`switch`). `auto` sets nothing: on a group it means "inherit the nearest parent's role", and the
+ * zoom rule (offline below the switch zoom, online from it) applies only when no ancestor sets a
+ * role.
  */
 export type SourceRole = 'auto' | 'offline' | 'online' | 'switch';
 
