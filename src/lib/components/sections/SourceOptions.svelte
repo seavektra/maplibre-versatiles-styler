@@ -107,9 +107,37 @@
 		onconfig({ ...rest, online: { vector, from } });
 	}
 
-	let onlineStatus = $derived(
-		config.online ? sourceStatus('vector', config.online.vector, onlineTileJSON) : undefined
-	);
+	/**
+	 * What the online tiles are, with the zooms the map reads them at: from the switch zoom to the
+	 * server's last, which is what the style's online source asks for.
+	 */
+	let onlineStatus = $derived.by(() => {
+		if (!config.online) return undefined;
+		const from = config.online.from;
+		const used =
+			onlineTileJSON && onlineTileJSON.maxzoom !== undefined
+				? {
+						...onlineTileJSON,
+						minzoom: Math.min(Math.max(onlineTileJSON.minzoom ?? 0, from), onlineTileJSON.maxzoom),
+					}
+				: onlineTileJSON;
+		return sourceStatus('vector', config.online.vector, used);
+	});
+
+	/**
+	 * What the PMTiles file is, with the zooms the map reads it at: up to the zoom below the switch to
+	 * online tiles, if there is one, else all of the file's.
+	 */
+	let offlineStatus = $derived.by(() => {
+		const file = tileJSONs.vector;
+		const from = config.online?.from;
+		if (!file || from === undefined || file.maxzoom === undefined) return status('vector');
+		const used = {
+			...file,
+			maxzoom: Math.max(Math.min(file.maxzoom, from - 1), file.minzoom ?? 0),
+		};
+		return sourceStatus('vector', config.vector, used, config.schema);
+	});
 </script>
 
 <!-- An address someone types, with what loading it gave below. -->
@@ -195,7 +223,12 @@
 		modified={false}
 		options={archives.map((archive) => ({ value: pmtilesUrl(archive.url), label: archive.name }))}
 	/>
-	{@render found('vector', 'Vector tiles', '')}
+	<div class="entry source-found">
+		<span class="label">Offline tiles</span>
+		<span class="source-status" class:error={offlineStatus.state === 'error'}>
+			{offlineStatus.text}
+		</span>
+	</div>
 	<InputCheckbox
 		label="Online above"
 		hint="Draw the same layers from the vector tiles of {config.assets} from a zoom on, and from this file below it. The SeaVektra app export keeps both."

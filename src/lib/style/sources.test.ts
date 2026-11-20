@@ -524,3 +524,28 @@ describe('online tiles above an archive', () => {
 		expect(parsed?.config.online).toBeUndefined();
 	});
 });
+
+describe('sourceStatus with the zooms in use', () => {
+	const tileJSON = {
+		tilejson: '3.0.0',
+		tiles: ['https://x/{z}/{x}/{y}'],
+		vector_layers: [{ id: 'streets', fields: {} }],
+		minzoom: 0,
+		maxzoom: 14,
+	} as unknown as TileJSONSpecification;
+
+	it('says where the tiles are and which zooms are read', () => {
+		const status = sourceStatus('vector', 'https://x', tileJSON, 'shortbread', {
+			where: 'in file',
+			used: [0, 8],
+		});
+		expect(status.text).toBe('Shortbread · in file z0–14 · used z0–8');
+	});
+
+	it('says when none are read', () => {
+		const status = sourceStatus('vector', 'https://x', tileJSON, 'shortbread', {
+			where: 'on server',
+		});
+		expect(status.text).toBe('Shortbread · on server z0–14 · not used');
+	});
+});

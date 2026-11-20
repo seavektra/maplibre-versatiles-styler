@@ -290,6 +290,15 @@ export function loadSources(config: SourceConfig, settled?: Promise<SourceConfig
 	};
 }
 
+/**
+ * Where a source's tiles are, and the zooms the style reads of them, for a row that shows both; `used`
+ * is `undefined` when the style reads none.
+ */
+export interface UsedZooms {
+	where: string;
+	used?: [number, number];
+}
+
 /** What a row of the tile sources says about its source. */
 export interface SourceStatus {
 	state: 'none' | 'loading' | 'ok' | 'error';
@@ -317,7 +326,8 @@ export function sourceStatus(
 	name: SourceName,
 	url: string | undefined,
 	tileJSON: LoadedTileJSON | undefined,
-	schema?: VectorSchema
+	schema?: VectorSchema,
+	zooms?: UsedZooms
 ): SourceStatus {
 	if (url === undefined) return { state: 'none', text: 'None' };
 	if (tileJSON === undefined) return { state: 'loading', text: 'Loading…' };
@@ -336,7 +346,13 @@ export function sourceStatus(
 		parts.push(known ? SCHEMA_LABELS[known] : 'Unknown schema');
 	}
 	if (tileJSON.maxzoom !== undefined) {
-		parts.push(`zoom ${tileJSON.minzoom ?? 0}–${tileJSON.maxzoom}`);
+		const range = `z${tileJSON.minzoom ?? 0}–${tileJSON.maxzoom}`;
+		if (zooms) {
+			parts.push(`${zooms.where} ${range}`);
+			parts.push(zooms.used ? `used z${zooms.used[0]}–${zooms.used[1]}` : 'not used');
+		} else {
+			parts.push(`zoom ${tileJSON.minzoom ?? 0}–${tileJSON.maxzoom}`);
+		}
 	}
 	if (name === 'vector') {
 		const languages = osm.languages(tileJSON).length;
