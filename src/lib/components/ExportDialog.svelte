@@ -131,7 +131,8 @@
 					<code>{APP_SOURCE_URL}</code>, which the app replaces with its bundled archive, and has no
 					zoom range of its own, so MapLibre takes it from the archive. Land cover, satellite and
 					elevation are left out, labels use the app's Open Sans, and the app provides glyphs and
-					icons.
+					icons. Chart layers go after the <code>seavektra-chart</code> layer; set the global state
+					<code>online</code> to false when there is no network.
 				</p>
 				{#if online}
 					<p class="dialog-note">
