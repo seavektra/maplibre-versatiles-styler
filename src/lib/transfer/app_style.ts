@@ -1,4 +1,5 @@
 import type { StyleSpecification } from 'maplibre-gl';
+import { baseMapSourceId, onlineSplit } from '../style/online';
 
 /**
  * The placeholder the SeaVektra app replaces with the `pmtiles://` URL of the base map archive it
@@ -24,13 +25,17 @@ type Layer = StyleSpecification['layers'][number];
  *   left out and its `url` is {@link APP_SOURCE_URL}, so MapLibre reads the zoom range from the
  *   archive the app loads. A `maxzoom` in the style would win over the archive's own: with a range
  *   wider than the archive's, MapLibre asks for tiles the archive does not have and draws nothing there.
+ * - A style that switches to online tiles from a zoom on (`splitByZoom`) keeps their source as it is,
+ *   with the layers that draw from it: the app reads them from the server above that zoom.
  * - Every other source (land cover, satellite, elevation) and the layers that draw from it are left
  *   out: the app bundles only the base map archive.
  * - Label fonts become the app's Open Sans of the same weight or style.
  * - `glyphs` and `sprite` are left out: the app's own style provides both.
  */
 export function appStyle(style: StyleSpecification): StyleSpecification {
-	const sourceId = baseMapSourceId(style);
+	const split = onlineSplit(style);
+	const sourceId = split?.offline ?? baseMapSourceId(style);
+	const onlineId = split && style.sources[split.online] ? split.online : undefined;
 	const { glyphs: _glyphs, sprite: _sprite, ...rest } = style;
 	const sources: Record<string, Source> = {};
 	if (sourceId !== undefined) {
@@ -41,23 +46,13 @@ export function appStyle(style: StyleSpecification): StyleSpecification {
 			...(source.attribution !== undefined ? { attribution: source.attribution } : {}),
 		};
 	}
+	if (onlineId !== undefined) sources[onlineId] = style.sources[onlineId];
 	const layers = style.layers
-		.filter((layer) => !('source' in layer) || layer.source === sourceId)
+		.filter(
+			(layer) => !('source' in layer) || layer.source === sourceId || layer.source === onlineId
+		)
 		.map(withAppFonts);
 	return { ...rest, sources, layers } as StyleSpecification;
-}
-
-/** The vector source most layers draw from; `undefined` when no layer draws from a vector source. */
-export function baseMapSourceId(style: StyleSpecification): string | undefined {
-	const counts = new Map<string, number>();
-	for (const layer of style.layers) {
-		if (!('source' in layer) || typeof layer.source !== 'string') continue;
-		if (style.sources[layer.source]?.type !== 'vector') continue;
-		counts.set(layer.source, (counts.get(layer.source) ?? 0) + 1);
-	}
-	let best: string | undefined;
-	for (const [id, count] of counts) if (best === undefined || count > counts.get(best)!) best = id;
-	return best;
 }
 
 /**

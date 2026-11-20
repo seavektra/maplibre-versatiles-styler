@@ -502,3 +502,25 @@ describe('vectorSchema', () => {
 		).toBeUndefined();
 	});
 });
+
+describe('online tiles above an archive', () => {
+	const archive = {
+		...archiveSources('https://example.org/tilesets/planet.pmtiles', 'https://tiles.example.org'),
+		online: { vector: 'https://tiles.example.org/tiles/osm-vector/tiles.json', from: 9 },
+	};
+
+	it('are kept in serialized sources and read back', () => {
+		const parsed = parseSources(serializeSources({ provider: 'archive', config: archive }));
+		expect(parsed).toEqual({ provider: 'archive', config: archive });
+	});
+
+	it.each([
+		['no address', { from: 9 }],
+		['a zoom that is not whole', { vector: 'https://x/tiles.json', from: 8.5 }],
+		['a zoom out of range', { vector: 'https://x/tiles.json', from: 0 }],
+		['not an object', 'https://x/tiles.json'],
+	])('are left out with %s', (_, online) => {
+		const parsed = parseSources({ provider: 'archive', ...archive, online });
+		expect(parsed?.config.online).toBeUndefined();
+	});
+});

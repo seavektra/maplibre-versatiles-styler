@@ -73,6 +73,7 @@
 	import ThemeSelect from './ThemeSelect.svelte';
 	import ExportDialog from './ExportDialog.svelte';
 	import SourceOptions from './sections/SourceOptions.svelte';
+	import { splitByZoom } from '../style/online';
 	import InspectPanel from './InspectPanel.svelte';
 	import { inspectClick, type InspectableMap, type InspectClick } from '../style/inspect_tiles';
 	import ImportDialog from './ImportDialog.svelte';
@@ -214,15 +215,18 @@
 	let satelliteTileJSON = $state<LoadedTileJSON | undefined>();
 	let elevationTileJSON = $state<LoadedTileJSON | undefined>();
 	let landcoverTileJSON = $state<LoadedTileJSON | undefined>();
+	let onlineTileJSON = $state<LoadedTileJSON | undefined>();
 
 	$effect(() => {
 		const current = sources;
 		vectorTileJSON = satelliteTileJSON = elevationTileJSON = landcoverTileJSON = undefined;
+		onlineTileJSON = undefined;
 		let outdated = false;
 		current.vector.then((tj) => !outdated && (vectorTileJSON = tj));
 		current.satellite.then((tj) => !outdated && (satelliteTileJSON = tj));
 		current.elevation.then((tj) => !outdated && (elevationTileJSON = tj));
 		current.landcover.then((tj) => !outdated && (landcoverTileJSON = tj));
+		current.online.then((tj) => !outdated && (onlineTileJSON = tj));
 		return () => (outdated = true);
 	});
 
@@ -341,17 +345,21 @@
 			if (landcoverTileJSON === undefined) return undefined;
 			if (landcoverTileJSON) stateSources.landcover = landcoverTileJSON;
 		}
-		return {
-			style: applyLayerZooms(
-				buildVectorStyle(
-					styleKey,
-					probeColors ? probeVectorState(state, probeColors) : state,
-					sourceConfig.assets,
-					stateSources
-				),
-				$state.snapshot(layerZooms) as LayerZooms,
-				vectorGroups.layerGroups
+		// Online tiles above the archive wait for their TileJSON; ones that failed are left out.
+		const online = sourceConfig.online;
+		if (online && onlineTileJSON === undefined) return undefined;
+		const style = applyLayerZooms(
+			buildVectorStyle(
+				styleKey,
+				probeColors ? probeVectorState(state, probeColors) : state,
+				sourceConfig.assets,
+				stateSources
 			),
+			$state.snapshot(layerZooms) as LayerZooms,
+			vectorGroups.layerGroups
+		);
+		return {
+			style: online && onlineTileJSON ? splitByZoom(style, onlineTileJSON, online.from) : style,
 			rendered: { styleKey, sources: sourceConfig, options: state },
 		};
 	}
@@ -795,7 +803,9 @@
 			description={provider === 'versatiles'
 				? 'The server the tiles, fonts and icons come from.'
 				: provider === 'archive'
-					? `A PMTiles file of this page. The map shows only its tiles; fonts and icons come from ${sourceConfig.assets}.`
+					? sourceConfig.online
+						? `A PMTiles file of this page below zoom ${sourceConfig.online.from}, the server's tiles from there on; fonts and icons come from ${sourceConfig.assets}.`
+						: `A PMTiles file of this page. The map shows only its tiles; fonts and icons come from ${sourceConfig.assets}.`
 					: provider === 'custom'
 						? 'Tiles from any server, by the address of a TileJSON or a PMTiles archive.'
 						: 'Where the tiles come from. Fonts and icons are those of tiles.versatiles.org.'}
@@ -810,6 +820,7 @@
 					elevation: elevationTileJSON,
 					landcover: landcoverTileJSON,
 				}}
+				{onlineTileJSON}
 				pmtiles={pmtiles !== undefined}
 				{archives}
 				server={ownServer}

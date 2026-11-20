@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { StyleSpecification } from 'maplibre-gl';
-import { APP_SOURCE_URL, appFont, appStyle, baseMapSourceId } from './app_style';
+import { APP_SOURCE_URL, appFont, appStyle } from './app_style';
+import { baseMapSourceId, splitByZoom } from '../style/online';
 
 /** The shape of a style exported with the VersaTiles server as the tile source. */
 function exported(): StyleSpecification {
@@ -109,6 +110,43 @@ describe('appStyle', () => {
 		const before = JSON.stringify(style);
 		appStyle(style);
 		expect(JSON.stringify(style)).toBe(before);
+	});
+});
+
+describe('appStyle of a style split by zoom', () => {
+	const online = {
+		tilejson: '3.0.0',
+		tiles: ['https://tiles.versatiles.org/tiles/osm-vector/{z}/{x}/{y}'],
+		vector_layers: [],
+		maxzoom: 14,
+	};
+
+	it('keeps the online source as it is, and the archive behind the placeholder', () => {
+		const style = appStyle(splitByZoom(exported(), online as never, 9));
+		expect(style.sources['versatiles-shortbread']).toEqual({
+			type: 'vector',
+			url: APP_SOURCE_URL,
+			attribution: '© OpenStreetMap contributors',
+		});
+		expect(style.sources['versatiles-shortbread-online']).toEqual({
+			type: 'vector',
+			tiles: online.tiles,
+			maxzoom: 14,
+		});
+		expect(Object.keys(style.sources)).toHaveLength(2);
+	});
+
+	it('keeps both copies of each layer, and still drops the land cover', () => {
+		const ids = appStyle(splitByZoom(exported(), online as never, 9)).layers.map((l) => l.id);
+		expect(ids).toEqual([
+			'background',
+			'water-area',
+			'water-area-online',
+			'street',
+			'street-online',
+			'label-place-city',
+			'label-place-city-online',
+		]);
 	});
 });
 
