@@ -106,6 +106,27 @@ describe('parseImport: a styler link with tile sources', () => {
 	});
 });
 
+describe('parseImport: a styler link with layer group settings', () => {
+	it('reads the source roles and the over-chart groups the link names', async () => {
+		const roles = { 'roads.motorways': 'switch', buildings: 'auto' };
+		const link = `https://example.org/#style=toner&roles=${encodeConfig(roles)}&chart=${encodeConfig({ over: [] })}`;
+		const result = await imported(link);
+		expect(result.layerRoles).toEqual({ 'roads.motorways': 'switch' });
+		expect(result.overChart).toEqual([]);
+	});
+
+	it('takes a chart parameter without a list of groups for the default groups', async () => {
+		const result = await imported(`https://example.org/#style=toner&chart=${encodeConfig({})}`);
+		expect(result.overChart).toEqual(['water.rivers', 'buildings', 'airport', 'sites']);
+	});
+
+	it('names none for a link without them', async () => {
+		const result = await imported('https://example.org/#style=toner');
+		expect(result.layerRoles).toBeUndefined();
+		expect(result.overChart).toBeUndefined();
+	});
+});
+
 describe('parseImport: an options object', () => {
 	it('takes a bare options object and splits the theme off', async () => {
 		const result = await imported('{"theme":"gray","text":{"scale":1.5}}');
@@ -201,6 +222,20 @@ describe('parseImport: a style.json this styler wrote', () => {
 			metadata: styleMetadata('osm', options, { 'seavektra:layerZooms': zooms }),
 		};
 		expect((await imported(JSON.stringify(style))).layerZooms).toEqual(zooms);
+	});
+
+	it('reads the source roles and the over-chart groups an exported style records', async () => {
+		const options = { theme: 'gray' as const };
+		const style = {
+			...osm(options),
+			metadata: styleMetadata('osm', options, {
+				'seavektra:layerRoles': { 'roads.motorways': 'switch' },
+				'seavektra:chart': { anchor: 'seavektra-chart', over: ['buildings'] },
+			}),
+		};
+		const result = await imported(JSON.stringify(style));
+		expect(result.layerRoles).toEqual({ 'roads.motorways': 'switch' });
+		expect(result.overChart).toEqual(['buildings']);
 	});
 
 	it('reads a recorded satellite style back as satellite', async () => {

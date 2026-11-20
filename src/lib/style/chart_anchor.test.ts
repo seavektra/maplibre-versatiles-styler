@@ -3,9 +3,11 @@ import type { LayerGroupMap } from '@versatiles/style';
 import type { StyleSpecification } from 'maplibre-gl';
 import { osm } from '@versatiles/style';
 import {
+	belowChartAnchor,
 	CHART_ANCHOR_ID,
 	DEFAULT_OVER_CHART,
 	METADATA_CHART_KEY,
+	overChartChanges,
 	parseOverChart,
 	withChartAnchor,
 } from './chart_anchor';
@@ -29,8 +31,12 @@ const ids = (style: StyleSpecification) => style.layers.map((l) => l.id);
 describe('parseOverChart', () => {
 	it('keeps strings only', () => {
 		expect(parseOverChart(['a', 1, null, 'b'])).toEqual(['a', 'b']);
-		expect(parseOverChart('a')).toEqual([]);
-		expect(parseOverChart(undefined)).toEqual([]);
+		expect(parseOverChart([])).toEqual([]);
+	});
+
+	it('takes anything but a list for the default', () => {
+		expect(parseOverChart('a')).toEqual(DEFAULT_OVER_CHART);
+		expect(parseOverChart(undefined)).toEqual(DEFAULT_OVER_CHART);
 	});
 });
 
@@ -173,5 +179,61 @@ describe('withChartAnchor', () => {
 		const twice = withChartAnchor(once, ['water.rivers'], groups);
 		expect(twice).toEqual(once);
 		expect(JSON.stringify(style)).toBe(before);
+	});
+});
+
+describe('belowChartAnchor', () => {
+	it('tells a group with a layer or a copy below the anchor', () => {
+		const anchored = withChartAnchor(
+			styleOf(['building-online', 'river', 'slot-below-streets', 'street-a']),
+			[],
+			groups
+		);
+		expect(belowChartAnchor(anchored.layers, groups, 'buildings')).toBe(true);
+		expect(belowChartAnchor(anchored.layers, groups, 'water')).toBe(true);
+	});
+
+	it('is false for a group moved over the chart, and for a style without the anchor', () => {
+		const anchored = withChartAnchor(
+			styleOf(['building', 'river', 'slot-below-streets']),
+			['buildings'],
+			groups
+		);
+		expect(belowChartAnchor(anchored.layers, groups, 'buildings')).toBe(false);
+		expect(belowChartAnchor(styleOf(['building']).layers, groups, 'buildings')).toBe(false);
+	});
+});
+
+describe('overChartChanges', () => {
+	it('counts the groups added to and left out of the default, in any order', () => {
+		expect(overChartChanges([...DEFAULT_OVER_CHART].reverse())).toBe(0);
+		expect(overChartChanges([...DEFAULT_OVER_CHART, 'roads'])).toBe(1);
+		expect(overChartChanges(['roads'])).toBe(DEFAULT_OVER_CHART.length + 1);
+	});
+});
+
+describe('belowChartAnchor for water groups', () => {
+	const water = { water: { ocean: ['ocean'], rivers: ['river'] } } as unknown as LayerGroupMap;
+	const style = {
+		version: 8,
+		sources: {},
+		layers: [
+			{ id: 'ocean', type: 'fill', source: 'osm', 'source-layer': 'water' },
+			{ id: 'river', type: 'line', source: 'osm', 'source-layer': 'water' },
+			{ id: 'slot-below-streets', type: 'background' },
+		],
+	} as StyleSpecification;
+
+	it('offers no move for water fills, which stay under the chart', () => {
+		const anchored = withChartAnchor(style, [], water);
+		expect(belowChartAnchor(anchored.layers, water, 'water.ocean')).toBe(false);
+		expect(belowChartAnchor(anchored.layers, water, 'water.rivers')).toBe(true);
+		expect(belowChartAnchor(anchored.layers, water, 'water')).toBe(true);
+	});
+
+	it('agrees with what withChartAnchor moves', () => {
+		const anchored = withChartAnchor(style, ['water'], water);
+		expect(ids(anchored)).toEqual(['ocean', CHART_ANCHOR_ID, 'river', 'slot-below-streets']);
+		expect(belowChartAnchor(anchored.layers, water, 'water')).toBe(false);
 	});
 });

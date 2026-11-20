@@ -9,6 +9,8 @@ import {
 } from '@versatiles/style/migrate';
 import { decodeConfig } from './hash';
 import { METADATA_ZOOMS_KEY, parseLayerZooms, type LayerZooms } from '../style/zooms';
+import { METADATA_ROLES_KEY, parseLayerRoles, type LayerRoles } from '../style/roles';
+import { METADATA_CHART_KEY, parseOverChart } from '../style/chart_anchor';
 import {
 	toStyleKey,
 	DEFAULT_STYLE_KEY,
@@ -56,6 +58,13 @@ export interface ImportResult {
 	sources?: ChosenSources;
 	/** The zoom ranges of layer groups the import records: a styler link or a style.json it exported. */
 	layerZooms?: LayerZooms;
+	/** The source roles of layer groups the import records, as for `layerZooms`. */
+	layerRoles?: LayerRoles;
+	/**
+	 * The groups drawn over the chart, where the import says: a styler link that names them, or a
+	 * style.json it exported. An empty list is one that names none; left out, the import says nothing.
+	 */
+	overChart?: string[];
 }
 
 /** The exact paths report nothing: there was nothing to reconstruct. */
@@ -182,6 +191,8 @@ function parseLink(text: string): ImportOutcome | undefined {
 	const config = encoded ? decodeConfig(encoded) : {};
 	const sources = parseSources(decodeConfig(params.get('sources') ?? ''));
 	const layerZooms = parseLayerZooms(decodeConfig(params.get('zooms') ?? ''));
+	const layerRoles = parseLayerRoles(decodeConfig(params.get('roles') ?? ''));
+	const chart = decodeConfig(params.get('chart') ?? '');
 	if (encoded && config === null) {
 		return {
 			ok: false,
@@ -198,6 +209,8 @@ function parseLink(text: string): ImportOutcome | undefined {
 			...NOTHING_TO_REPORT,
 			...(sources ? { sources } : {}),
 			...(Object.keys(layerZooms).length > 0 ? { layerZooms } : {}),
+			...(Object.keys(layerRoles).length > 0 ? { layerRoles } : {}),
+			...(chart ? { overChart: parseOverChart(chart.over) } : {}),
 		},
 	};
 }
@@ -266,12 +279,24 @@ function fromGuess(guess: OptionsGuess): ImportOutcome {
 	};
 }
 
-/** The zoom ranges a style records, as a part of the import result; nothing when it records none. */
-function zoomsOf(style: StyleSpecification): { layerZooms?: LayerZooms } {
-	const layerZooms = parseLayerZooms(
-		(style.metadata as Record<string, unknown> | undefined)?.[METADATA_ZOOMS_KEY]
-	);
-	return Object.keys(layerZooms).length > 0 ? { layerZooms } : {};
+/**
+ * The settings of layer groups a style records, as a part of the import result: their zoom ranges,
+ * their source roles and the groups drawn over the chart. Nothing of what it records none of.
+ */
+function layerSettingsOf(
+	style: StyleSpecification
+): Pick<ImportResult, 'layerZooms' | 'layerRoles' | 'overChart'> {
+	const metadata = style.metadata as Record<string, unknown> | undefined;
+	const layerZooms = parseLayerZooms(metadata?.[METADATA_ZOOMS_KEY]);
+	const layerRoles = parseLayerRoles(metadata?.[METADATA_ROLES_KEY]);
+	const chart = metadata?.[METADATA_CHART_KEY];
+	return {
+		...(Object.keys(layerZooms).length > 0 ? { layerZooms } : {}),
+		...(Object.keys(layerRoles).length > 0 ? { layerRoles } : {}),
+		...(chart !== null && typeof chart === 'object'
+			? { overChart: parseOverChart((chart as Record<string, unknown>).over) }
+			: {}),
+	};
 }
 
 /** A style.json: exact when it records its own options, reconstructed otherwise. */
@@ -294,7 +319,7 @@ async function parseStyle(style: StyleSpecification): Promise<ImportOutcome> {
 				...NOTHING_TO_REPORT,
 				origin: base,
 				...(sources ? { sources } : {}),
-				...zoomsOf(style),
+				...layerSettingsOf(style),
 			},
 		};
 	}

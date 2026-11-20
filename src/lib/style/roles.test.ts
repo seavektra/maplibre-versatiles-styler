@@ -1,7 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import type { LayerGroupMap } from '@versatiles/style';
 import type { StyleSpecification } from 'maplibre-gl';
-import { effectiveRole, parseLayerRoles, roleWarnings, rolesByLayer } from './roles';
+import {
+	effectiveRole,
+	parseLayerRoles,
+	roleWarnings,
+	rolesByLayer,
+	unfadedWarnings,
+} from './roles';
 
 const groups = {
 	water: { rivers: ['water-river'], ocean: ['water-ocean'] },
@@ -135,13 +141,34 @@ describe('roleWarnings', () => {
 			style,
 			{ roads: 'offline', 'roads.motorways': 'switch' },
 			groups,
-			9,
+			11,
 			14
 		);
 		expect(warnings.map((w) => [w.layerId, w.group, w.kind])).toEqual([
 			['road-motorway', 'roads.motorways', 'switch'],
-			['road-motorway-casing', 'roads.motorways', 'switch'],
 			['road-street', 'roads', 'offlineAboveSwitch'],
+		]);
+	});
+
+	it('gives no switch warning to a layer that starts past the overlap', () => {
+		// The motorways start at z10 and z12: past the overlap from z9 to z10.
+		expect(roleWarnings(style, { 'roads.motorways': 'switch' }, groups, 9, 14)).toEqual([]);
+	});
+
+	it('says a switch label switches source rather than draws twice', () => {
+		const labelled: StyleSpecification = {
+			...style,
+			layers: style.layers.map((l) =>
+				l.id === 'water-river' ? ({ ...l, type: 'symbol' } as typeof l) : l
+			),
+		};
+		expect(roleWarnings(labelled, { 'water.rivers': 'switch' }, groups, 9, 14)).toEqual([
+			{
+				layerId: 'water-river',
+				group: 'water.rivers',
+				kind: 'switch',
+				message: 'Switches source at z9',
+			},
 		]);
 	});
 
@@ -182,5 +209,29 @@ describe('roleWarnings', () => {
 	it('has none for a style without a vector source', () => {
 		const empty: StyleSpecification = { version: 8, sources: {}, layers: [] };
 		expect(roleWarnings(empty, { buildings: 'switch' }, groups, 9, 14)).toEqual([]);
+	});
+});
+
+describe('unfadedWarnings', () => {
+	it('warns of each unfaded layer under the group its role is set on', () => {
+		expect(
+			unfadedWarnings(
+				['road-motorway'],
+				{ roads: 'switch', 'roads.motorways': 'switch' },
+				groups,
+				9
+			)
+		).toEqual([
+			{
+				layerId: 'road-motorway',
+				group: 'roads.motorways',
+				kind: 'unfaded',
+				message: "Can't fade in: opacity depends on feature data; switches at z9",
+			},
+		]);
+	});
+
+	it('leaves out a layer with no role set', () => {
+		expect(unfadedWarnings(['building'], {}, groups, 9)).toEqual([]);
 	});
 });

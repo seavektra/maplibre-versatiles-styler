@@ -55,11 +55,11 @@ describe('HashManager', () => {
 
 			const state = hm.initialize();
 			expect(state.styleKey).toBe('colorful-dark');
-			expect(state.zooms).toBe(zooms);
+			expect(state.layers).toEqual({ zooms });
 			// Events the earlier hash assignments queued go first.
 			vi.advanceTimersByTime(400);
 
-			hm.setZooms(null);
+			hm.setLayerParam('zooms', null);
 			vi.advanceTimersByTime(400);
 			expect(storage.saved[storage.saved.length - 1]).not.toContain('zooms=');
 			hm.destroy();
@@ -86,7 +86,7 @@ describe('HashManager', () => {
 			hm.initialize();
 			const zooms = encodeConfig({ 'land.forest': { min: 6 } });
 
-			hm.setZooms(zooms);
+			hm.setLayerParam('zooms', zooms);
 			vi.advanceTimersByTime(400);
 			expect(
 				String(replaceStateSpy.mock.calls[replaceStateSpy.mock.calls.length - 1]?.[2])
@@ -94,7 +94,47 @@ describe('HashManager', () => {
 
 			window.location.hash = '#map=10/51.5/-0.12';
 			window.dispatchEvent(new HashChangeEvent('hashchange'));
-			expect(onChange).toHaveBeenCalledWith(null);
+			expect(onChange).toHaveBeenCalledWith('zooms', null);
+		});
+
+		it('carries the source roles and the over-chart groups as parameters of their own', () => {
+			const onChange = vi.fn();
+			const hm = new HashManager(createMockMap(), vi.fn(), undefined, undefined, { onChange });
+			hm.initialize();
+			const roles = encodeConfig({ 'roads.motorways': 'switch' });
+			const chart = encodeConfig({ over: ['buildings'] });
+
+			hm.setLayerParam('roles', roles);
+			hm.setLayerParam('chart', chart);
+			vi.advanceTimersByTime(400);
+			const written = String(
+				replaceStateSpy.mock.calls[replaceStateSpy.mock.calls.length - 1]?.[2]
+			);
+			expect(written).toContain(`roles=${roles}`);
+			expect(written).toContain(`chart=${chart}`);
+			expect(written).not.toContain('zooms=');
+
+			// A hash that drops the roles reports only them.
+			window.location.hash = `#map=10/51.5/-0.12&chart=${chart}`;
+			window.dispatchEvent(new HashChangeEvent('hashchange'));
+			expect(onChange).toHaveBeenCalledTimes(1);
+			expect(onChange).toHaveBeenCalledWith('roles', null);
+		});
+
+		it('reads the source roles and the over-chart groups a page opens with', () => {
+			const roles = encodeConfig({ buildings: 'online' });
+			const chart = encodeConfig({ over: [] });
+			window.location.hash = `#map=10/51.5/-0.12&roles=${roles}&chart=${chart}`;
+			const hm = new HashManager(createMockMap(), vi.fn(), undefined, undefined, {
+				onChange: vi.fn(),
+			});
+			expect(hm.initialize().layers).toEqual({ roles, chart });
+		});
+
+		it('ignores layer group settings when it is not told about them', () => {
+			window.location.hash = `#map=10/51.5/-0.12&roles=${encodeConfig({ buildings: 'online' })}`;
+			const hm = new HashManager(createMockMap(), vi.fn());
+			expect(hm.initialize().layers).toEqual({});
 		});
 	});
 
@@ -103,7 +143,7 @@ describe('HashManager', () => {
 			const map = createMockMap();
 			const hm = new HashManager(map, vi.fn());
 
-			expect(hm.initialize()).toEqual({ styleKey: 'colorful', config: null });
+			expect(hm.initialize()).toEqual({ styleKey: 'colorful', config: null, layers: {} });
 		});
 
 		it('parses map and style from hash', () => {
@@ -111,7 +151,7 @@ describe('HashManager', () => {
 			const map = createMockMap();
 			const hm = new HashManager(map, vi.fn());
 
-			expect(hm.initialize()).toEqual({ styleKey: 'colorful-dark', config: null });
+			expect(hm.initialize()).toEqual({ styleKey: 'colorful-dark', config: null, layers: {} });
 			expect(map.jumpTo).toHaveBeenCalledWith({
 				center: [-0.12, 51.5],
 				zoom: 10,

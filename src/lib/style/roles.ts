@@ -81,7 +81,7 @@ export interface RoleWarning {
 	layerId: string;
 	/** The path of the group the role was set on: the sub-group when it overrides its parent. */
 	group: string;
-	kind: 'switch' | 'onlineBelowSwitch' | 'offlineAboveSwitch';
+	kind: 'switch' | 'onlineBelowSwitch' | 'offlineAboveSwitch' | 'unfaded';
 	message: string;
 }
 
@@ -119,10 +119,16 @@ export function roleWarnings(
 		} else if (endsBeforeSwitch && role === 'switch') {
 			continue;
 		} else if (role === 'switch') {
+			// One that starts past the overlap only switches with the network: nothing to warn of.
+			if (minzoom >= from + 1) continue;
+			// Labels cut over at the switch rather than overlap (see `splitByZoom`).
 			warnings.push({
 				...base,
 				kind: 'switch',
-				message: `Draws twice between z${from} and z${from + 1}`,
+				message:
+					layer.type === 'symbol'
+						? `Switches source at z${from}`
+						: `Draws twice between z${from} and z${from + 1}`,
 			});
 		} else if (role === 'online' && minzoom < from) {
 			warnings.push({
@@ -139,4 +145,29 @@ export function roleWarnings(
 		}
 	}
 	return warnings;
+}
+
+/**
+ * The warnings for the switch layers whose online copy could not fade in (`unfaded` of the split, see
+ * `splitByZoom`): their opacity reads feature data, so they appear at the switch zoom `from` at once.
+ */
+export function unfadedWarnings(
+	unfaded: readonly string[],
+	roles: LayerRoles,
+	groups: LayerGroupMap,
+	from: number
+): RoleWarning[] {
+	const explicit = explicitRoles(roles, groups);
+	return unfaded.flatMap((layerId) => {
+		const set = explicit.get(layerId);
+		if (!set) return [];
+		return [
+			{
+				layerId,
+				group: set.group,
+				kind: 'unfaded' as const,
+				message: `Can't fade in: opacity depends on feature data; switches at z${from}`,
+			},
+		];
+	});
 }

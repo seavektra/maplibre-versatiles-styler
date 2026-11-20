@@ -15,7 +15,9 @@
 		type DashMode,
 		type LayerNode,
 	} from '../../options/layers';
+	import InputCheckbox from '../inputs/InputCheckbox.svelte';
 	import InputNumber from '../inputs/InputNumber.svelte';
+	import InputSelect from '../inputs/InputSelect.svelte';
 	import InputSegmented from '../inputs/InputSegmented.svelte';
 	import InputText from '../inputs/InputText.svelte';
 	import InputVisibility from '../inputs/InputVisibility.svelte';
@@ -28,6 +30,10 @@
 		type ZoomSpan,
 	} from '../../style/zooms';
 	import type { StyleSpecification } from 'maplibre-gl';
+	import type { LayerRoles, SourceRole } from '../../style/roles';
+	import { groupWarnings, type RoleStatus } from '../../style/role_status';
+	import { offlineLayerId } from '../../style/online';
+	import { belowChartAnchor, DEFAULT_OVER_CHART } from '../../style/chart_anchor';
 
 	let {
 		layers = $bindable(),
@@ -37,6 +43,10 @@
 		zoomDefaults = {},
 		tileZooms = {},
 		styleLayers,
+		roles = $bindable(),
+		rolesShown = false,
+		roleState,
+		overChart = $bindable(),
 		disabled = false,
 	}: {
 		layers: ResolvedLayerGroups;
@@ -51,8 +61,37 @@
 		tileZooms?: Record<string, ZoomSpan>;
 		/** The layers of the style on the map, for what each group's ⓘ lists. */
 		styleLayers?: StyleSpecification['layers'];
+		/** The source roles set for groups, by path; left out, the groups have no role select. */
+		roles?: LayerRoles;
+		/** Whether the groups show their source role: only while the map draws online tiles above. */
+		rolesShown?: boolean;
+		/** What the source roles of the style on the map come to: each layer's role, the warnings. */
+		roleState?: RoleStatus;
+		/** The groups drawn over the chart; left out, the groups have no Over chart checkbox. */
+		overChart?: string[];
 		disabled?: boolean;
 	} = $props();
+
+	const ROLE_OPTIONS: SelectOption[] = [
+		{ value: 'auto', label: 'Auto' },
+		{ value: 'offline', label: 'Offline' },
+		{ value: 'online', label: 'Online' },
+		{ value: 'switch', label: 'Switch' },
+	];
+
+	/** Whether `path` is the group `id` or one under it. */
+	const under = (path: string, id: string) => path === id || path.startsWith(id + '.');
+
+	/** Back to the style's own zooms, Auto and the default over-chart groups, for a group and those under it. */
+	function resetGroupSettings(id: string) {
+		if (zooms) for (const path of Object.keys(zooms)) if (under(path, id)) delete zooms[path];
+		if (roles) for (const path of Object.keys(roles)) if (under(path, id)) delete roles[path];
+		if (overChart)
+			overChart = [
+				...overChart.filter((path) => !under(path, id)),
+				...DEFAULT_OVER_CHART.filter((path) => under(path, id)),
+			];
+	}
 
 	let nodes = $derived(layerNodes(layerGroups, defaults));
 	let expanded = $state<Record<string, boolean>>({});
@@ -106,6 +145,52 @@
 				stepper
 				stepFrom={bound === 'max' ? MAX_ZOOM : MIN_ZOOM}
 			/>
+		{/each}
+	{/if}
+{/snippet}
+
+<!--
+	Where a group is drawn from (with online tiles above an archive only), whether it is drawn over the
+	chart, and what its role leads to.
+-->
+{#snippet sourceRole(id: string)}
+	{#if roles && rolesShown}
+		<InputSelect
+			label="Source"
+			hint="Where this group is drawn from. Auto: the offline file for layers that start below the switch zoom, the online tiles for those that start at it or later. Switch: both, the online tiles fading in at the switch zoom. A sub-group on Auto follows its parent."
+			{disabled}
+			options={ROLE_OPTIONS}
+			bind:value={
+				() => roles?.[id] ?? 'auto',
+				(role) => {
+					if (!roles) return;
+					if (role === undefined || role === 'auto') delete roles[id];
+					else roles[id] = role as SourceRole;
+				}
+			}
+			defaultValue="auto"
+		/>
+	{/if}
+	{#if overChart && (overChart.includes(id) || (styleLayers && belowChartAnchor(styleLayers, layerGroups, id)))}
+		<InputCheckbox
+			label="Over chart"
+			hint="Draw this group over the nautical chart rather than under it. The exported style marks where the chart goes; the preview draws no chart."
+			{disabled}
+			bind:value={
+				() => overChart?.includes(id) ?? false,
+				(on) => {
+					if (!overChart) return;
+					overChart = on ? [...overChart, id] : overChart.filter((path) => path !== id);
+				}
+			}
+			defaultValue={DEFAULT_OVER_CHART.includes(id)}
+		/>
+	{/if}
+	{#if rolesShown && roleState}
+		{#each groupWarnings(roleState.warnings, id) as warning (warning.message)}
+			<div class="entry">
+				<p class="warning" role="note">⚠ {warning.message}: {warning.layerIds.join(', ')}</p>
+			</div>
 		{/each}
 	{/if}
 {/snippet}
@@ -167,8 +252,9 @@
 <!-- What a group holds: each of its map layers, what it draws, its zooms and its fade. -->
 {#snippet groupInfo(id: string)}
 	{@const summaries = styleLayers
-		? groupLayerSummaries({ layers: styleLayers }, layerGroups, id)
+		? groupLayerSummaries({ layers: styleLayers }, layerGroups, id, offlineLayerId)
 		: []}
+	{@const sources = rolesShown ? roleState?.roles : undefined}
 	{#if summaries.length === 0}
 		<span>No layers of this group are in the style.</span>
 	{:else}
@@ -176,7 +262,7 @@
 			<thead
 				><tr
 					><th>Style layer</th><th>Tile layer: kinds</th><th>Zoom</th><th>Fade</th><th>Tiles</th
-					></tr
+					>{#if sources}<th>Source</th>{/if}</tr
 				></thead
 			>
 			<tbody>
@@ -188,6 +274,7 @@
 						<td>{layer.min ?? 0}–{layer.max ?? '∞'}</td>
 						<td>{layer.fade ? `${layer.fade[0]}→${layer.fade[1]}` : '—'}</td>
 						<td>{tiles ? `${tiles.min}–${tiles.max}` : '—'}</td>
+						{#if sources}<td>{sources[offlineLayerId(layer.id)] ?? '—'}</td>{/if}
 					</tr>
 				{/each}
 			</tbody>
@@ -211,9 +298,7 @@
 			onchange={(value) => setLayerValue(layers, node, value)}
 			onReset={() => {
 				resetLayer(layers, defaults, node);
-				if (zooms)
-					for (const path of Object.keys(zooms))
-						if (path === id || path.startsWith(id + '.')) delete zooms[path];
+				resetGroupSettings(id);
 			}}
 			expanded={expanded[id] ?? false}
 			onToggle={expandable ? () => (expanded[id] = !(expanded[id] ?? false)) : undefined}
@@ -221,6 +306,7 @@
 		{#if expandable && expanded[id]}
 			<div class="nested group-body">
 				{@render zoomRange(id)}
+				{@render sourceRole(id)}
 				{#if hasChildren}
 					{@render tree(node.children)}
 				{:else if node.line}

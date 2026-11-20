@@ -17,9 +17,12 @@ export const DEFAULT_OVER_CHART = ['water.rivers', 'buildings', 'airport', 'site
 
 type Layer = StyleSpecification['layers'][number];
 
-/** The over-chart group paths in data that may come from anywhere: a link, a file, storage. */
+/**
+ * The over-chart group paths in data that may come from anywhere: a link, a file, storage. Anything
+ * but a list is the default.
+ */
 export function parseOverChart(value: unknown): string[] {
-	if (!Array.isArray(value)) return [];
+	if (!Array.isArray(value)) return [...DEFAULT_OVER_CHART];
 	return value.filter((path): path is string => typeof path === 'string');
 }
 
@@ -50,16 +53,7 @@ export function withChartAnchor(
 		paint: { 'background-opacity': 0 },
 	};
 	const paths = [...new Set(over)];
-	const overIds = new Set(
-		paths.flatMap((path) => {
-			const layerIds = layerIdsOfGroup(groups, path);
-			if (!isWaterPath(path)) return layerIds;
-			const fills = new Set(
-				layers.filter((l) => l.type === 'fill').map((l) => offlineLayerId(l.id))
-			);
-			return layerIds.filter((id) => !fills.has(id));
-		})
-	);
+	const overIds = overChartIds(layers, paths, groups);
 	const index = anchorIndex(layers);
 
 	const below = layers.slice(0, index);
@@ -76,6 +70,26 @@ export function withChartAnchor(
 	};
 }
 
+/**
+ * The IDs of the layers that marking the groups at `paths` "over chart" moves over it: every layer of
+ * the groups, but no water fills (see {@link withChartAnchor}). Copies are named by their layer's ID.
+ */
+export function overChartIds(
+	layers: Layer[],
+	paths: readonly string[],
+	groups: LayerGroupMap
+): Set<string> {
+	let fills: Set<string> | undefined;
+	return new Set(
+		paths.flatMap((path) => {
+			const layerIds = layerIdsOfGroup(groups, path);
+			if (!isWaterPath(path)) return layerIds;
+			fills ??= new Set(layers.filter((l) => l.type === 'fill').map((l) => offlineLayerId(l.id)));
+			return layerIds.filter((id) => !fills!.has(id));
+		})
+	);
+}
+
 function isWaterPath(path: string): boolean {
 	return path === 'water' || path.startsWith('water.');
 }
@@ -89,4 +103,26 @@ function anchorIndex(layers: Layer[]): number {
 		return id.startsWith('street') || id.startsWith('tunnel-street');
 	});
 	return street >= 0 ? street : layers.length;
+}
+
+/**
+ * Whether a layer of the group at `path`, or a copy of one, lies below the chart anchor in `layers`
+ * (a style after {@link withChartAnchor}): only then can marking the group "over chart" move it.
+ * A style without the anchor has nothing below it.
+ */
+export function belowChartAnchor(layers: Layer[], groups: LayerGroupMap, path: string): boolean {
+	const anchor = layers.findIndex((layer) => layer.id === CHART_ANCHOR_ID);
+	if (anchor < 0) return false;
+	const ids = overChartIds(layers, [path], groups);
+	return layers.slice(0, anchor).some((layer) => ids.has(offlineLayerId(layer.id)));
+}
+
+/** How many groups `over` adds to or leaves out of {@link DEFAULT_OVER_CHART}; 0 when it is the default. */
+export function overChartChanges(over: readonly string[]): number {
+	const set = new Set(over);
+	const defaults = new Set(DEFAULT_OVER_CHART);
+	return (
+		[...set].filter((path) => !defaults.has(path)).length +
+		[...defaults].filter((path) => !set.has(path)).length
+	);
 }
