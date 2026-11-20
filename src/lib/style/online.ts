@@ -4,6 +4,12 @@ import type { TileJSONSpecification } from '@versatiles/style';
 /** What the online copy of a layer or source is called: its id with this after it. */
 export const ONLINE_SUFFIX = '-online';
 
+/** What the bridge copy of an offline fill is called: its id with this after it. */
+export const BRIDGE_SUFFIX = '-bridge';
+
+/** How many zooms past the switch the offline fills are still drawn, under everything online. */
+export const BRIDGE_ZOOMS = 1;
+
 /** Where an exported style records how it splits the base map between its two sources. */
 export const METADATA_ONLINE_KEY = 'seavektra:online';
 
@@ -28,6 +34,12 @@ type Layer = StyleSpecification['layers'][number];
  * split, and comes right after its layer, so the drawing order stays. A layer the split leaves no zooms
  * to is left out. Without the cap the offline layers would keep drawing their last tiles scaled up
  * under the online ones.
+ *
+ * Crossing the switch would blink: the offline layers are gone in the frame the online ones appear,
+ * before their tiles have loaded, and MapLibre draws no tile of one source while another's load. So
+ * the offline fills (water, land) are also drawn for {@link BRIDGE_ZOOMS} zoom past the switch, as
+ * copies (id + {@link BRIDGE_SUFFIX}) under every layer of the base map: the scaled-up shapes show
+ * until the online layers cover them. Lines and labels are not bridged, so none is drawn twice.
  */
 export function splitByZoom(
 	style: StyleSpecification,
@@ -38,13 +50,24 @@ export function splitByZoom(
 	if (offline === undefined) return style;
 	const onlineId = offline + ONLINE_SUFFIX;
 	const layers: Layer[] = [];
+	const bridges: Layer[] = [];
+	let firstBase: number | undefined;
 	for (const layer of style.layers) {
 		if (!('source' in layer) || layer.source !== offline) {
 			layers.push(layer);
 			continue;
 		}
+		firstBase ??= layers.length;
 		const min = layer.minzoom ?? 0;
 		const max = layer.maxzoom ?? Infinity;
+		if (layer.type === 'fill' && min < from + BRIDGE_ZOOMS && max > from) {
+			bridges.push({
+				...layer,
+				id: layer.id + BRIDGE_SUFFIX,
+				minzoom: Math.max(min, from),
+				maxzoom: Math.min(max, from + BRIDGE_ZOOMS),
+			} as Layer);
+		}
 		if (min < from) layers.push(max > from ? { ...layer, maxzoom: from } : layer);
 		if (max > from) {
 			layers.push({
@@ -55,6 +78,8 @@ export function splitByZoom(
 			} as Layer);
 		}
 	}
+	// The bridges go under every layer of the base map, so the online layers cover them once loaded.
+	layers.splice(firstBase ?? layers.length, 0, ...bridges);
 	const split: OnlineSplit = { offline, online: onlineId, from };
 	return {
 		...style,
@@ -75,9 +100,12 @@ export function onlineSplit(style: StyleSpecification): OnlineSplit | undefined 
 	return { offline, online, from };
 }
 
-/** The layer an online copy was made from: its id without {@link ONLINE_SUFFIX}. */
+/** The layer an online or bridge copy was made from: its id without the copy's suffix. */
 export function offlineLayerId(id: string): string {
-	return id.endsWith(ONLINE_SUFFIX) ? id.slice(0, -ONLINE_SUFFIX.length) : id;
+	for (const suffix of [ONLINE_SUFFIX, BRIDGE_SUFFIX]) {
+		if (id.endsWith(suffix)) return id.slice(0, -suffix.length);
+	}
+	return id;
 }
 
 /** The vector source most layers draw from; `undefined` when no layer draws from a vector source. */

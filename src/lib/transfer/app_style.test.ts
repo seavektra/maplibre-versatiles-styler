@@ -141,6 +141,7 @@ describe('appStyle of a style split by zoom', () => {
 		const ids = appStyle(splitByZoom(exported(), online as never, 9)).layers.map((l) => l.id);
 		expect(ids).toEqual([
 			'background',
+			'water-area-bridge',
 			'water-area',
 			'water-area-online',
 			'street',
