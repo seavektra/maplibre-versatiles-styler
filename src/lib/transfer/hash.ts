@@ -44,9 +44,19 @@ export interface SourcesHash {
 	onChange: (sources: string | null) => void;
 }
 
-/** How the zoom ranges of layer groups are told to the hash: as one encoded parameter, `null` for none. */
-export interface ZoomsHash {
-	onChange: (zooms: string | null) => void;
+/**
+ * The settings of layer groups the hash carries, each as one encoded parameter: their zoom ranges,
+ * their source roles and the groups drawn over the chart.
+ */
+export const LAYER_PARAMS = ['zooms', 'roles', 'chart'] as const;
+export type LayerParam = (typeof LAYER_PARAMS)[number];
+
+/** The encoded layer group settings a hash names, by parameter; one it does not name is left out. */
+export type LayerParams = Partial<Record<LayerParam, string>>;
+
+/** How the settings of layer groups are told to the hash: each parameter encoded, `null` for none. */
+export interface LayersHash {
+	onChange: (param: LayerParam, value: string | null) => void;
 }
 
 /** Reads and writes the last hash a page had, so that opening it again without a hash restores it. */
@@ -81,9 +91,9 @@ export class HashManager {
 	private panel: PanelHash | undefined;
 	private sources: SourcesHash | undefined;
 	private currentSources: string | null = null;
-	private zooms: ZoomsHash | undefined;
+	private layers: LayersHash | undefined;
 	private storage: HashStorage | undefined;
-	private currentZooms: string | null = null;
+	private currentLayers: LayerParams = {};
 	private currentStyleKey: StyleKey = DEFAULT_STYLE_KEY;
 	private currentConfigEncoded: string | null = null;
 	private currentPanelOpen = false;
@@ -98,14 +108,14 @@ export class HashManager {
 		onStyleChange: (key: StyleKey, config: Record<string, unknown> | null) => void,
 		panel?: PanelHash,
 		sources?: SourcesHash,
-		zooms?: ZoomsHash,
+		layers?: LayersHash,
 		storage?: HashStorage
 	) {
 		this.map = map;
 		this.onStyleChange = onStyleChange;
 		this.panel = panel;
 		this.sources = sources;
-		this.zooms = zooms;
+		this.layers = layers;
 		this.storage = storage;
 		this.boundOnMoveEnd = () => this.onMoveEnd();
 		this.boundOnHashChange = () => this.onHashChange();
@@ -118,8 +128,8 @@ export class HashManager {
 		panelOpen: boolean | undefined;
 		/** The tile sources the hash names, if it is told about sources at all. */
 		sources: string | undefined;
-		/** The encoded zoom ranges the hash names, if it is told about them. */
-		zooms: string | undefined;
+		/** The encoded layer group settings the hash names, if it is told about them. */
+		layers: LayerParams;
 	} {
 		this.tryDisableMapHash();
 
@@ -129,9 +139,9 @@ export class HashManager {
 			if (stored) window.history.replaceState(null, '', stored);
 		}
 
-		const { mapView, styleKey, config, panelOpen, sources, zooms } = this.parseHash();
+		const { mapView, styleKey, config, panelOpen, sources, layers } = this.parseHash();
 		this.currentSources = sources;
-		this.currentZooms = zooms;
+		this.currentLayers = layers;
 		this.currentStyleKey = styleKey;
 		this.currentConfigEncoded = config ? encodeConfig(config) : null;
 		this.currentPanelOpen = panelOpen ?? this.panel?.defaultOpen ?? false;
@@ -160,14 +170,14 @@ export class HashManager {
 			config,
 			panelOpen,
 			sources: sources ?? undefined,
-			zooms: zooms ?? undefined,
+			layers: { ...layers },
 		};
 	}
 
-	/** The zoom ranges of layer groups changed; `null` for none. */
-	setZooms(zooms: string | null): void {
-		if (!this.zooms || zooms === this.currentZooms) return;
-		this.currentZooms = zooms;
+	/** A setting of layer groups changed; `null` for none. */
+	setLayerParam(param: LayerParam, value: string | null): void {
+		if (!this.layers || value === (this.currentLayers[param] ?? null)) return;
+		this.currentLayers = withParam(this.currentLayers, param, value);
 		this.updateHash();
 	}
 
@@ -213,7 +223,7 @@ export class HashManager {
 		config: Record<string, unknown> | null;
 		panelOpen: boolean | undefined;
 		sources: string | null;
-		zooms: string | null;
+		layers: LayerParams;
 	} {
 		const hash = window.location.hash.replace(/^#/, '');
 		if (!hash)
@@ -223,7 +233,7 @@ export class HashManager {
 				config: null,
 				panelOpen: undefined,
 				sources: null,
-				zooms: null,
+				layers: {},
 			};
 
 		const params = new Map<string, string>();
@@ -263,9 +273,15 @@ export class HashManager {
 
 		// A page that does not offer other sources is not told about them by a link either.
 		const sources = this.sources ? (params.get('sources') ?? null) : null;
-		const zooms = this.zooms ? (params.get('zooms') ?? null) : null;
+		const layers: LayerParams = {};
+		if (this.layers) {
+			for (const param of LAYER_PARAMS) {
+				const value = params.get(param);
+				if (value) layers[param] = value;
+			}
+		}
 
-		return { mapView, styleKey, config, panelOpen, sources, zooms };
+		return { mapView, styleKey, config, panelOpen, sources, layers };
 	}
 
 	private buildHash(): string {
@@ -300,8 +316,9 @@ export class HashManager {
 		if (this.currentConfigEncoded) {
 			parts.push(`config=${this.currentConfigEncoded}`);
 		}
-		if (this.currentZooms) {
-			parts.push(`zooms=${this.currentZooms}`);
+		for (const param of LAYER_PARAMS) {
+			const value = this.currentLayers[param];
+			if (value) parts.push(`${param}=${value}`);
 		}
 
 		return '#' + parts.join('&');
@@ -331,7 +348,7 @@ export class HashManager {
 		if (this.updating) return;
 		this.updating = true;
 
-		const { mapView, styleKey, config, panelOpen, sources, zooms } = this.parseHash();
+		const { mapView, styleKey, config, panelOpen, sources, layers } = this.parseHash();
 
 		if (mapView) {
 			this.map.jumpTo({
@@ -347,9 +364,13 @@ export class HashManager {
 			this.sources.onChange(sources);
 		}
 
-		if (this.zooms && zooms !== this.currentZooms) {
-			this.currentZooms = zooms;
-			this.zooms.onChange(zooms);
+		if (this.layers) {
+			for (const param of LAYER_PARAMS) {
+				const value = layers[param] ?? null;
+				if (value === (this.currentLayers[param] ?? null)) continue;
+				this.currentLayers = withParam(this.currentLayers, param, value);
+				this.layers.onChange(param, value);
+			}
 		}
 
 		if (this.panel) {
@@ -378,6 +399,12 @@ export class HashManager {
 			this.map._hash.remove();
 		}
 	}
+}
+
+/** The parameters with one set, or left out for `null`. */
+function withParam(params: LayerParams, param: LayerParam, value: string | null): LayerParams {
+	const { [param]: _previous, ...rest } = params;
+	return value === null ? rest : { ...rest, [param]: value };
 }
 
 interface MapView {

@@ -158,9 +158,9 @@ export interface InspectResult {
  */
 const LANDCOVER_PREFIX = 'landcover-';
 
-/** The group path of a layer, or of the layer an online or land cover layer copies. */
+/** The group path of a layer, or of the layer an online, fallback or land cover layer copies. */
 export function groupOf(groups: GroupIndex, layerId: string): string[] | undefined {
-	// The online copy of a layer (see `splitByZoom`) is in the group of the layer it copies.
+	// A copy of a layer (see `splitByZoom`) is in the group of the layer it copies.
 	const id = offlineLayerId(layerId);
 	return (
 		groups.get(id) ??

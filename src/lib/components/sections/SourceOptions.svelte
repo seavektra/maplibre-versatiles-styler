@@ -19,6 +19,7 @@
 	import InputSelect from '../inputs/InputSelect.svelte';
 	import InputCheckbox from '../inputs/InputCheckbox.svelte';
 	import InputNumber from '../inputs/InputNumber.svelte';
+	import { roleSummary, type RoleStatus } from '../../style/role_status';
 
 	let {
 		provider,
@@ -26,6 +27,8 @@
 		config,
 		tileJSONs,
 		onlineTileJSON,
+		roleState,
+		previewOffline = $bindable(false),
 		pmtiles,
 		archives = [],
 		server,
@@ -40,6 +43,10 @@
 		tileJSONs: Record<SourceName, LoadedTileJSON | undefined>;
 		/** What loading the online tiles above an archive gave, as for `tileJSONs`. */
 		onlineTileJSON?: LoadedTileJSON;
+		/** What the source roles of the style on the map come to, while it draws online tiles above. */
+		roleState?: RoleStatus;
+		/** Whether the map previews the style without a network. */
+		previewOffline?: boolean;
 		/** Whether the map can read PMTiles archives. */
 		pmtiles: boolean;
 		/** The PMTiles archives the page offers, by name and address. */
@@ -123,8 +130,8 @@
 			where: 'on server',
 			used,
 		});
-		// The zoom below the switch is loaded early, not drawn (see `splitByZoom`).
-		return used && used[0] > 0 && status.state === 'ok'
+		// The zoom below the switch is loaded early, not drawn, when a layer switches (see `splitByZoom`).
+		return used && used[0] > 0 && status.state === 'ok' && roleState?.preloads
 			? { ...status, text: `${status.text} · preloads z${used[0] - 1}` }
 			: status;
 	});
@@ -264,6 +271,18 @@
 				{onlineStatus.text}
 			</span>
 		</div>
+		{#if roleState}
+			<div class="entry source-found">
+				<span class="label">Source roles</span>
+				<span class="source-status">{roleSummary(roleState).join(' · ')}</span>
+			</div>
+		{/if}
+		<InputCheckbox
+			label="Preview without network"
+			hint="Show the map as an app shows it with no network: without the online tiles, and with the layers that switch source drawn from this file above the switch zoom too. Not saved with the style."
+			bind:value={previewOffline}
+			defaultValue={false}
+		/>
 	{/if}
 	<InputSelect
 		label="Elevation"

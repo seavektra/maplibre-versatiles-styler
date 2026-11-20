@@ -206,14 +206,19 @@ export interface LayerSummary {
 	fade?: [number, number];
 }
 
-/** A summary of each of the group's layers in the style, in the style's order. */
+/**
+ * A summary of each of the group's layers in the style, in the style's order. `idOf` names the group
+ * layer a style layer was made from, so that copies of it (the online copies of a split style) are
+ * listed too.
+ */
 export function groupLayerSummaries(
 	style: Pick<StyleSpecification, 'layers'>,
 	groups: LayerGroupMap,
-	path: string
+	path: string,
+	idOf: (id: string) => string = (id) => id
 ): LayerSummary[] {
 	const ids = new Set(layerIdsOfGroup(groups, path));
-	return style.layers.filter((layer) => ids.has(layer.id)).map(summarizeLayer);
+	return style.layers.filter((layer) => ids.has(idOf(layer.id))).map(summarizeLayer);
 }
 
 /** What a style layer draws and at which zooms. */

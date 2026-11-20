@@ -54,7 +54,13 @@
 	import { onDestroy, untrack } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { highlightGeometry, setStyleLayerShown } from '../style/inspect_overlay';
-	import { decodeConfig, encodeConfig, HashManager, localHashStorage } from '../transfer/hash';
+	import {
+		decodeConfig,
+		encodeConfig,
+		HashManager,
+		localHashStorage,
+		type LayerParam,
+	} from '../transfer/hash';
 	import {
 		applyLayerZooms,
 		groupZoomDefaults,
@@ -73,7 +79,20 @@
 	import ThemeSelect from './ThemeSelect.svelte';
 	import ExportDialog from './ExportDialog.svelte';
 	import SourceOptions from './sections/SourceOptions.svelte';
-	import { splitByZoom } from '../style/online';
+	import { ONLINE_STATE, splitByZoom } from '../style/online';
+	import {
+		METADATA_ROLES_KEY,
+		parseLayerRoles,
+		rolesByLayer,
+		type LayerRoles,
+	} from '../style/roles';
+	import { roleStatus, type RoleStatus } from '../style/role_status';
+	import {
+		DEFAULT_OVER_CHART,
+		overChartChanges,
+		parseOverChart,
+		withChartAnchor,
+	} from '../style/chart_anchor';
 	import InspectPanel from './InspectPanel.svelte';
 	import { inspectClick, type InspectableMap, type InspectClick } from '../style/inspect_tiles';
 	import ImportDialog from './ImportDialog.svelte';
@@ -272,6 +291,12 @@
 	);
 	/** The zoom ranges set for the vector style's layer groups, by group path. */
 	let layerZooms = $state<LayerZooms>({});
+	/** The source roles set for the vector style's layer groups, by group path: none is Auto. */
+	let layerRoles = $state<LayerRoles>({});
+	/** The layer groups drawn over the chart, by group path. */
+	let overChart = $state<string[]>([...DEFAULT_OVER_CHART]);
+	/** What the source roles of the style on the map come to, while it draws online tiles above. */
+	let roleState = $state.raw<RoleStatus | undefined>();
 	/**
 	 * The zoom range each layer group has as the library builds it, shown where no range is set. It
 	 * depends on the tiles' schema, not on colours or labels, so it is read off a default style.
@@ -315,9 +340,14 @@
 	 * needs is still loading. Sources are only read when the options need them, so a source that
 	 * arrives later and changes nothing does not rebuild the style.
 	 */
-	function currentStyle(
-		probeColors?: Record<string, string>
-	): { style: StyleSpecification; rendered: RenderedStyle } | undefined {
+	function currentStyle(probeColors?: Record<string, string>):
+		| {
+				style: StyleSpecification;
+				rendered: RenderedStyle;
+				/** What the source roles come to, when the style draws online tiles above. */
+				roles?: RoleStatus;
+		  }
+		| undefined {
 		const styleKey = currentStyleKey;
 		if (styleKey === 'satellite') {
 			const state = $state.snapshot(satelliteState) as SatelliteState;
@@ -348,7 +378,8 @@
 		// Online tiles above the archive wait for their TileJSON; ones that failed are left out.
 		const online = sourceConfig.online;
 		if (online && onlineTileJSON === undefined) return undefined;
-		const style = applyLayerZooms(
+		const groups = vectorGroups.layerGroups;
+		const zoomed = applyLayerZooms(
 			buildVectorStyle(
 				styleKey,
 				probeColors ? probeVectorState(state, probeColors) : state,
@@ -356,12 +387,27 @@
 				stateSources
 			),
 			$state.snapshot(layerZooms) as LayerZooms,
-			vectorGroups.layerGroups
+			groups
 		);
-		return {
-			style: online && onlineTileJSON ? splitByZoom(style, onlineTileJSON, online.from) : style,
-			rendered: { styleKey, sources: sourceConfig, options: state },
-		};
+		let style = zoomed;
+		let roles: RoleStatus | undefined;
+		if (online && onlineTileJSON) {
+			const set = $state.snapshot(layerRoles) as LayerRoles;
+			style = splitByZoom(zoomed, onlineTileJSON, online.from, rolesByLayer(set, groups));
+			// The colour probes of the inspector ask for none of it.
+			if (!probeColors)
+				roles = roleStatus(
+					zoomed,
+					style,
+					set,
+					groups,
+					online.from,
+					stateSources.vector.maxzoom ?? online.from - 1
+				);
+		}
+		// The anchor is there with or without online tiles, so that every export marks where the chart goes.
+		style = withChartAnchor(style, $state.snapshot(overChart) as string[], groups);
+		return { style, rendered: { styleKey, sources: sourceConfig, options: state }, roles };
 	}
 
 	function styleSources(
@@ -408,8 +454,36 @@
 			);
 			rendered = next.rendered;
 			styleLayers = next.rendered.styleKey === 'satellite' ? undefined : next.style.layers;
+			roleState = next.roles;
 			hashManager?.setConfig(minimal);
 		});
+	});
+
+	/**
+	 * Whether the map previews the style without a network: the online copies hidden, the offline
+	 * fallbacks shown, as an app shows them. Not saved: it is a way of looking, not part of the style.
+	 */
+	let previewOffline = $state(false);
+
+	/**
+	 * Sets the global state the online copies show by. A style that is still loading takes it once it is
+	 * in: a style loaded in full starts from its own default, online.
+	 */
+	function setPreviewNetwork() {
+		// A MapLibre without global state has no online copies to hide.
+		if (typeof map.setGlobalStateProperty !== 'function') return;
+		try {
+			map.setGlobalStateProperty(ONLINE_STATE, !previewOffline);
+		} catch {
+			map.once('style.load', () => map.setGlobalStateProperty(ONLINE_STATE, !previewOffline));
+		}
+	}
+
+	// Again for every style the map gets, which may have been loaded in full.
+	$effect(() => {
+		void previewOffline;
+		void styleLayers;
+		untrack(setPreviewNetwork);
 	});
 
 	// The container shows around the globe; its colour follows the style key, and the host's own value
@@ -590,12 +664,18 @@
 			provider,
 			config: sourceConfig,
 		});
-		// The ranges are in the layers already; the record lets Import restore the fields that set them.
+		// The ranges and roles are in the layers already, and the over-chart groups in the chart
+		// anchor's record; the records let Import restore the fields that set them.
 		const zooms = $state.snapshot(layerZooms) as LayerZooms;
-		if (isSatellite || Object.keys(zooms).length === 0) return style;
+		const roles = $state.snapshot(layerRoles) as LayerRoles;
+		if (isSatellite) return style;
 		return {
 			...style,
-			metadata: { ...(style.metadata as object), [METADATA_ZOOMS_KEY]: zooms },
+			metadata: {
+				...(style.metadata as object),
+				...(Object.keys(zooms).length > 0 ? { [METADATA_ZOOMS_KEY]: zooms } : {}),
+				...(Object.keys(roles).length > 0 ? { [METADATA_ROLES_KEY]: roles } : {}),
+			},
 		} as StyleSpecification;
 	});
 
@@ -616,6 +696,8 @@
 		if (newSources) applySources(newSources);
 		setBaseStyle(result.styleKey, result.config);
 		layerZooms = result.layerZooms ?? {};
+		layerRoles = result.layerRoles ?? {};
+		overChart = result.overChart ?? [...DEFAULT_OVER_CHART];
 		// Only the warnings are counted here: the notes are true of almost every import, and counting
 		// them would make a clean one look like it went badly.
 		const worth = result.diagnostics.filter((d) => d.severity === 'warning').length;
@@ -658,6 +740,23 @@
 		return encoded ? parseLayerZooms(decodeConfig(encoded)) : {};
 	}
 
+	function rolesFromHash(encoded: string | null | undefined): LayerRoles {
+		return encoded ? parseLayerRoles(decodeConfig(encoded)) : {};
+	}
+
+	/** The over-chart groups a link names as `{ over }`; the default where it names none. */
+	function chartFromHash(encoded: string | null | undefined): string[] {
+		const chart = encoded ? decodeConfig(encoded) : null;
+		return chart ? parseOverChart(chart.over) : [...DEFAULT_OVER_CHART];
+	}
+
+	/** Applies a layer group setting of the hash. */
+	function applyLayerParam(param: LayerParam, encoded: string | null | undefined) {
+		if (param === 'zooms') layerZooms = zoomsFromHash(encoded);
+		else if (param === 'roles') layerRoles = rolesFromHash(encoded);
+		else overChart = chartFromHash(encoded);
+	}
+
 	function sourcesFromHash(encoded: string | null | undefined): ChosenSources | undefined {
 		return encoded ? parseSources(decodeConfig(encoded)) : undefined;
 	}
@@ -677,15 +776,17 @@
 				otherSources
 					? { onChange: (encoded) => applySources(sourcesFromHash(encoded) ?? ownSources()) }
 					: undefined,
-				{ onChange: (encoded) => (layerZooms = zoomsFromHash(encoded)) },
+				{ onChange: applyLayerParam },
 				config.persist
 					? localHashStorage(
 							typeof config.persist === 'string' ? config.persist : 'versatiles-styler'
 						)
 					: undefined
 			);
-			const { styleKey, config: hashConfig, panelOpen, sources, zooms } = hashManager.initialize();
-			layerZooms = zoomsFromHash(zooms);
+			const { styleKey, config: hashConfig, panelOpen, sources, layers } = hashManager.initialize();
+			layerZooms = zoomsFromHash(layers.zooms);
+			layerRoles = rolesFromHash(layers.roles);
+			overChart = chartFromHash(layers.chart);
 			if (panelOpen !== undefined) paneOpen = panelOpen;
 			const hashSources = sourcesFromHash(sources);
 			if (hashSources) applySources(hashSources);
@@ -700,7 +801,16 @@
 	// And so are the zoom ranges of the layer groups.
 	$effect(() => {
 		const zooms = $state.snapshot(layerZooms) as LayerZooms;
-		hashManager?.setZooms(Object.keys(zooms).length > 0 ? encodeConfig(zooms) : null);
+		hashManager?.setLayerParam('zooms', Object.keys(zooms).length > 0 ? encodeConfig(zooms) : null);
+	});
+	// And their source roles, and the groups drawn over the chart where they are not the default.
+	$effect(() => {
+		const roles = $state.snapshot(layerRoles) as LayerRoles;
+		hashManager?.setLayerParam('roles', Object.keys(roles).length > 0 ? encodeConfig(roles) : null);
+	});
+	$effect(() => {
+		const over = $state.snapshot(overChart) as string[];
+		hashManager?.setLayerParam('chart', overChartChanges(over) > 0 ? encodeConfig({ over }) : null);
 	});
 	// And so are the tile sources, unless they are the page's own.
 	$effect(() => {
@@ -821,6 +931,8 @@
 					landcover: landcoverTileJSON,
 				}}
 				{onlineTileJSON}
+				{roleState}
+				bind:previewOffline
 				pmtiles={pmtiles !== undefined}
 				{archives}
 				server={ownServer}
@@ -860,6 +972,10 @@
 				{zoomDefaults}
 				{tileZooms}
 				{styleLayers}
+				bind:roles={layerRoles}
+				rolesShown={sourceConfig.online !== undefined && roleState !== undefined}
+				{roleState}
+				bind:overChart
 			/>
 		{/if}
 		<!-- The project itself, which is neither the map nor the style: out of the action rows. -->

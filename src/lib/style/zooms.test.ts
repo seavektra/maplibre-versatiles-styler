@@ -166,6 +166,21 @@ describe('tileLayerZooms', () => {
 });
 
 describe('groupLayerSummaries', () => {
+	it('lists the copies of a group layer too, given what names the layer they were made from', () => {
+		const layers = [
+			{ id: 'land-forest', type: 'fill', source: 'osm', 'source-layer': 'land', maxzoom: 9 },
+			{ id: 'land-forest-online', type: 'fill', source: 'online', 'source-layer': 'land' },
+		] as StyleSpecification['layers'];
+		const idOf = (id: string) => id.replace(/-online$/, '');
+		expect(groupLayerSummaries({ layers }, groups, 'land').map((s) => s.id)).toEqual([
+			'land-forest',
+		]);
+		expect(groupLayerSummaries({ layers }, groups, 'land', idOf).map((s) => s.id)).toEqual([
+			'land-forest',
+			'land-forest-online',
+		]);
+	});
+
 	it('lists what each layer of a group draws, its zooms and its fade', () => {
 		const summaries = groupLayerSummaries(
 			{

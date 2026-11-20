@@ -29,6 +29,9 @@ type Layer = StyleSpecification['layers'][number];
  *   with the layers that draw from it: the app reads them from the server above that zoom.
  * - Every other source (land cover, satellite, elevation) and the layers that draw from it are left
  *   out: the app bundles only the base map archive.
+ * - The `seavektra-chart` anchor layer (it has no source), the root `state` (`online`), the `-overlap`
+ *   and `-fallback` copies (their offline source keeps its id, so its url is the placeholder) and the
+ *   `seavektra:*` metadata are kept as they are.
  * - Label fonts become the app's Open Sans of the same weight or style.
  * - `glyphs` and `sprite` are left out: the app's own style provides both.
  */

@@ -2,6 +2,9 @@
 	import type { FontFaceInfo, LayerGroupMap, TextGroupMap } from '@versatiles/style';
 	import { configChangeCount, type VectorState } from '../style/config';
 	import type { LayerZooms, ZoomSpan } from '../style/zooms';
+	import type { LayerRoles } from '../style/roles';
+	import type { RoleStatus } from '../style/role_status';
+	import { DEFAULT_OVER_CHART, overChartChanges } from '../style/chart_anchor';
 	import type { StyleSpecification } from 'maplibre-gl';
 	import SidebarSection from './SidebarSection.svelte';
 	import ColorOptions from './sections/ColorOptions.svelte';
@@ -28,6 +31,10 @@
 		zoomDefaults,
 		tileZooms = {},
 		styleLayers,
+		roles = $bindable(),
+		rolesShown = false,
+		roleState,
+		overChart = $bindable(),
 	}: {
 		options: VectorState;
 		defaults: VectorState;
@@ -50,6 +57,14 @@
 		tileZooms?: Record<string, ZoomSpan>;
 		/** The layers of the style on the map. */
 		styleLayers?: StyleSpecification['layers'];
+		/** The source roles set for layer groups. */
+		roles: LayerRoles;
+		/** Whether the groups offer their source role: only while the map draws online tiles above. */
+		rolesShown?: boolean;
+		/** What the source roles of the style on the map come to. */
+		roleState?: RoleStatus;
+		/** The layer groups drawn over the chart. */
+		overChart: string[];
 	} = $props();
 
 	const changes = (...paths: string[]) => configChangeCount(config, paths);
@@ -71,6 +86,8 @@
 		options.features.buildings = defaults.features.buildings;
 		options.features.landcover = defaults.features.landcover;
 		for (const path of Object.keys(zooms)) delete zooms[path];
+		for (const path of Object.keys(roles)) delete roles[path];
+		overChart = [...DEFAULT_OVER_CHART];
 	}
 	function resetElevation() {
 		options.features.terrain = defaults.features.terrain;
@@ -89,7 +106,9 @@
 	description="Show, hide or fade groups of map features."
 	onReset={resetLayers}
 	changes={changes('layers', 'features.buildings', 'features.landcover') +
-		Object.keys(zooms).length}
+		Object.keys(zooms).length +
+		(rolesShown ? Object.keys(roles).length : 0) +
+		overChartChanges(overChart)}
 >
 	<InputCheckbox
 		label="3D buildings"
@@ -117,6 +136,10 @@
 		{zoomDefaults}
 		{tileZooms}
 		{styleLayers}
+		bind:roles
+		{rolesShown}
+		{roleState}
+		bind:overChart
 	/>
 </SidebarSection>
 <h4 class="section-group">Appearance</h4>
