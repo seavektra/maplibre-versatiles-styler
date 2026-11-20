@@ -30,8 +30,8 @@
 
 	let tab = $state<Tab>('json');
 	let format = $state<JsonFormat>('pretty');
-	/** Who the style.json is for: any MapLibre page, or the SeaVektra app's base map. */
-	let audience = $state<'web' | 'app'>('web');
+	/** Who the style.json is for: the SeaVektra app's base map (the default), or any MapLibre page. */
+	let audience = $state<'web' | 'app'>('app');
 	let target = $state<'npm' | 'browser'>('npm');
 
 	// Stringifying a large style is not free, so it happens for the tab actually being looked at.
@@ -152,8 +152,8 @@
 						'Who the style is for',
 						audience,
 						[
-							{ value: 'web', label: 'MapLibre' },
 							{ value: 'app', label: 'SeaVektra app' },
+							{ value: 'web', label: 'MapLibre' },
 						],
 						(value) => (audience = value as 'web' | 'app')
 					)}

@@ -131,6 +131,7 @@ describe('appStyle of a style split by zoom', () => {
 		expect(style.sources['versatiles-shortbread-online']).toEqual({
 			type: 'vector',
 			tiles: online.tiles,
+			minzoom: 9,
 			maxzoom: 14,
 		});
 		expect(Object.keys(style.sources)).toHaveLength(2);

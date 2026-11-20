@@ -58,7 +58,7 @@ export function splitByZoom(
 	const split: OnlineSplit = { offline, online: onlineId, from };
 	return {
 		...style,
-		sources: { ...style.sources, [onlineId]: onlineSource(online) },
+		sources: { ...style.sources, [onlineId]: onlineSource(online, from) },
 		layers,
 		metadata: { ...(style.metadata as object), [METADATA_ONLINE_KEY]: split },
 	} as StyleSpecification;
@@ -93,15 +93,23 @@ export function baseMapSourceId(style: StyleSpecification): string | undefined {
 	return best;
 }
 
-/** A vector source of a loaded TileJSON, inline, as the style builder writes its own. */
-function onlineSource(tileJSON: TileJSONSpecification): StyleSpecification['sources'][string] {
+/**
+ * A vector source of a loaded TileJSON, inline, as the style builder writes its own, that starts at the
+ * zoom the base map switches at. No layer draws from it below that zoom, but MapLibre Native still
+ * prefetches a source's tiles up to four zooms below the map's (`DEFAULT_PREFETCH_ZOOM_DELTA`), so
+ * without the `minzoom` a map at z9 would fetch z5 tiles from the server for nothing.
+ */
+function onlineSource(
+	tileJSON: TileJSONSpecification,
+	from: number
+): StyleSpecification['sources'][string] {
 	const { tiles, minzoom, maxzoom, bounds, attribution } = tileJSON as TileJSONSpecification & {
 		attribution?: string;
 	};
 	return {
 		type: 'vector',
 		tiles,
-		...(minzoom !== undefined ? { minzoom } : {}),
+		minzoom: Math.max(minzoom ?? 0, from),
 		...(maxzoom !== undefined ? { maxzoom } : {}),
 		...(bounds !== undefined ? { bounds } : {}),
 		...(attribution !== undefined ? { attribution } : {}),

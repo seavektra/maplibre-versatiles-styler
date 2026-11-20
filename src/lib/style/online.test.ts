@@ -58,7 +58,7 @@ describe('splitByZoom', () => {
 		expect(result.sources['base-online']).toEqual({
 			type: 'vector',
 			tiles: ['https://tiles.example.org/{z}/{x}/{y}'],
-			minzoom: 0,
+			minzoom: 9,
 			maxzoom: 14,
 			attribution: '© OSM',
 		});
