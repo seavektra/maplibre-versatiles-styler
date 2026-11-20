@@ -4,11 +4,8 @@ import type { TileJSONSpecification } from '@versatiles/style';
 /** What the online copy of a layer or source is called: its id with this after it. */
 export const ONLINE_SUFFIX = '-online';
 
-/** What the bridge copy of an offline fill is called: its id with this after it. */
-export const BRIDGE_SUFFIX = '-bridge';
-
-/** How many zooms past the switch the offline fills are still drawn, under everything online. */
-export const BRIDGE_ZOOMS = 1;
+/** What the invisible layer that loads the online tiles early is called: the online source id + this. */
+export const PRELOAD_SUFFIX = '-preload';
 
 /** Where an exported style records how it splits the base map between its two sources. */
 export const METADATA_ONLINE_KEY = 'seavektra:online';
@@ -37,9 +34,10 @@ type Layer = StyleSpecification['layers'][number];
  *
  * Crossing the switch would blink: the offline layers are gone in the frame the online ones appear,
  * before their tiles have loaded, and MapLibre draws no tile of one source while another's load. So
- * the offline fills (water, land) are also drawn for {@link BRIDGE_ZOOMS} zoom past the switch, as
- * copies (id + {@link BRIDGE_SUFFIX}) under every layer of the base map: the scaled-up shapes show
- * until the online layers cover them. Lines and labels are not bridged, so none is drawn twice.
+ * one invisible fill (opacity 0, id: the online source id + {@link PRELOAD_SUFFIX}) reads the online
+ * source in the zoom below the switch. MapLibre loads tiles for every visible layer, transparent or
+ * not, so the online tiles of that zoom are in when the switch is crossed, and MapLibre draws them
+ * scaled up, as it does a parent tile within one source, until the tiles of the switch zoom load.
  */
 export function splitByZoom(
 	style: StyleSpecification,
@@ -50,7 +48,6 @@ export function splitByZoom(
 	if (offline === undefined) return style;
 	const onlineId = offline + ONLINE_SUFFIX;
 	const layers: Layer[] = [];
-	const bridges: Layer[] = [];
 	let firstBase: number | undefined;
 	for (const layer of style.layers) {
 		if (!('source' in layer) || layer.source !== offline) {
@@ -60,14 +57,6 @@ export function splitByZoom(
 		firstBase ??= layers.length;
 		const min = layer.minzoom ?? 0;
 		const max = layer.maxzoom ?? Infinity;
-		if (layer.type === 'fill' && min < from + BRIDGE_ZOOMS && max > from) {
-			bridges.push({
-				...layer,
-				id: layer.id + BRIDGE_SUFFIX,
-				minzoom: Math.max(min, from),
-				maxzoom: Math.min(max, from + BRIDGE_ZOOMS),
-			} as Layer);
-		}
 		if (min < from) layers.push(max > from ? { ...layer, maxzoom: from } : layer);
 		if (max > from) {
 			layers.push({
@@ -78,8 +67,8 @@ export function splitByZoom(
 			} as Layer);
 		}
 	}
-	// The bridges go under every layer of the base map, so the online layers cover them once loaded.
-	layers.splice(firstBase ?? layers.length, 0, ...bridges);
+	// Under the base map: it draws nothing, so where it goes only keeps the order of the rest readable.
+	if (from > 0) layers.splice(firstBase ?? layers.length, 0, preloadLayer(onlineId, online, from));
 	const split: OnlineSplit = { offline, online: onlineId, from };
 	return {
 		...style,
@@ -100,12 +89,9 @@ export function onlineSplit(style: StyleSpecification): OnlineSplit | undefined 
 	return { offline, online, from };
 }
 
-/** The layer an online or bridge copy was made from: its id without the copy's suffix. */
+/** The layer an online copy was made from: its id without {@link ONLINE_SUFFIX}. */
 export function offlineLayerId(id: string): string {
-	for (const suffix of [ONLINE_SUFFIX, BRIDGE_SUFFIX]) {
-		if (id.endsWith(suffix)) return id.slice(0, -suffix.length);
-	}
-	return id;
+	return id.endsWith(ONLINE_SUFFIX) ? id.slice(0, -ONLINE_SUFFIX.length) : id;
 }
 
 /** The vector source most layers draw from; `undefined` when no layer draws from a vector source. */
@@ -122,10 +108,27 @@ export function baseMapSourceId(style: StyleSpecification): string | undefined {
 }
 
 /**
- * A vector source of a loaded TileJSON, inline, as the style builder writes its own, that starts at the
- * zoom the base map switches at. No layer draws from it below that zoom, but MapLibre Native still
- * prefetches a source's tiles up to four zooms below the map's (`DEFAULT_PREFETCH_ZOOM_DELTA`), so
- * without the `minzoom` a map at z9 would fetch z5 tiles from the server for nothing.
+ * The invisible fill that has MapLibre load the online tiles of the zoom below the switch. Which tile
+ * layer it names does not matter, as MapLibre loads whole tiles; it names one the tiles have.
+ */
+function preloadLayer(onlineId: string, online: TileJSONSpecification, from: number): Layer {
+	const tileLayer = (online as { vector_layers?: { id: string }[] }).vector_layers?.[0]?.id;
+	return {
+		id: onlineId + PRELOAD_SUFFIX,
+		type: 'fill',
+		source: onlineId,
+		'source-layer': tileLayer ?? 'preload',
+		minzoom: from - 1,
+		maxzoom: from,
+		paint: { 'fill-opacity': 0 },
+	} as Layer;
+}
+
+/**
+ * A vector source of a loaded TileJSON, inline, as the style builder writes its own, that starts one
+ * zoom below the switch, where the preload layer reads it. MapLibre Native prefetches a source's
+ * tiles up to four zooms below the map's (`DEFAULT_PREFETCH_ZOOM_DELTA`), so without the `minzoom` a
+ * map at z9 would also fetch z5 tiles from the server for nothing.
  */
 function onlineSource(
 	tileJSON: TileJSONSpecification,
@@ -137,7 +140,7 @@ function onlineSource(
 	return {
 		type: 'vector',
 		tiles,
-		minzoom: Math.max(minzoom ?? 0, from),
+		minzoom: Math.max(minzoom ?? 0, from - 1),
 		...(maxzoom !== undefined ? { maxzoom } : {}),
 		...(bounds !== undefined ? { bounds } : {}),
 		...(attribution !== undefined ? { attribution } : {}),

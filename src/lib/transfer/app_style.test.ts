@@ -131,7 +131,7 @@ describe('appStyle of a style split by zoom', () => {
 		expect(style.sources['versatiles-shortbread-online']).toEqual({
 			type: 'vector',
 			tiles: online.tiles,
-			minzoom: 9,
+			minzoom: 8,
 			maxzoom: 14,
 		});
 		expect(Object.keys(style.sources)).toHaveLength(2);
@@ -141,7 +141,7 @@ describe('appStyle of a style split by zoom', () => {
 		const ids = appStyle(splitByZoom(exported(), online as never, 9)).layers.map((l) => l.id);
 		expect(ids).toEqual([
 			'background',
-			'water-area-bridge',
+			'versatiles-shortbread-online-preload',
 			'water-area',
 			'water-area-online',
 			'street',

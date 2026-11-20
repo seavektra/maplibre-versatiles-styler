@@ -108,35 +108,41 @@
 	}
 
 	/**
-	 * What the online tiles are, with the zooms the map reads them at: from the switch zoom to the
-	 * server's last, which is what the style's online source asks for.
+	 * What the online tiles are: the zooms the server has, and those the map draws, from the switch
+	 * zoom to the server's last, with the zoom below that it loads early.
 	 */
 	let onlineStatus = $derived.by(() => {
 		if (!config.online) return undefined;
-		const from = config.online.from;
-		const used =
-			onlineTileJSON && onlineTileJSON.maxzoom !== undefined
-				? {
-						...onlineTileJSON,
-						minzoom: Math.min(Math.max(onlineTileJSON.minzoom ?? 0, from), onlineTileJSON.maxzoom),
-					}
-				: onlineTileJSON;
-		return sourceStatus('vector', config.online.vector, used);
+		const server = onlineTileJSON;
+		let used: [number, number] | undefined;
+		if (server && server.maxzoom !== undefined) {
+			const first = Math.max(server.minzoom ?? 0, config.online.from);
+			if (first <= server.maxzoom) used = [first, server.maxzoom];
+		}
+		const status = sourceStatus('vector', config.online.vector, server, undefined, {
+			where: 'on server',
+			used,
+		});
+		// The zoom below the switch is loaded early, not drawn (see `splitByZoom`).
+		return used && used[0] > 0 && status.state === 'ok'
+			? { ...status, text: `${status.text} · preloads z${used[0] - 1}` }
+			: status;
 	});
 
 	/**
-	 * What the PMTiles file is, with the zooms the map reads it at: up to the zoom below the switch to
-	 * online tiles, if there is one, else all of the file's.
+	 * What the PMTiles file is: the zooms it has, and with online tiles above it, those the map reads,
+	 * up to the zoom below the switch.
 	 */
 	let offlineStatus = $derived.by(() => {
 		const file = tileJSONs.vector;
 		const from = config.online?.from;
 		if (!file || from === undefined || file.maxzoom === undefined) return status('vector');
-		const used = {
-			...file,
-			maxzoom: Math.max(Math.min(file.maxzoom, from - 1), file.minzoom ?? 0),
-		};
-		return sourceStatus('vector', config.vector, used, config.schema);
+		const first = file.minzoom ?? 0;
+		const last = Math.min(file.maxzoom, from - 1);
+		return sourceStatus('vector', config.vector, file, config.schema, {
+			where: 'in file',
+			used: last >= first ? [first, last] : undefined,
+		});
 	});
 </script>
 

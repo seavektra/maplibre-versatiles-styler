@@ -42,9 +42,8 @@ describe('splitByZoom', () => {
 	it('draws each layer offline below the zoom and online from it, in the same order', () => {
 		expect(zooms(splitByZoom(style(), online, 9))).toEqual([
 			['background', undefined, undefined, undefined],
-			// The fills bridge the switch for one zoom, under every layer of the base map.
-			['water-bridge', 'base', 9, 10],
-			['forest-bridge', 'base', 9, 10],
+			// Loads the online tiles one zoom early, so they are in when the switch is crossed.
+			['base-online-preload', 'base-online', 8, 9],
 			['water', 'base', undefined, 9],
 			['water-online', 'base-online', 9, undefined],
 			['forest', 'base', 7, 9],
@@ -56,12 +55,22 @@ describe('splitByZoom', () => {
 		]);
 	});
 
+	it('preloads with an invisible fill of a tile layer the online tiles have', () => {
+		const preload = splitByZoom(
+			style(),
+			{ ...online, vector_layers: [{ id: 'ocean' }] } as never,
+			9
+		).layers[1] as { 'source-layer': string; paint: Record<string, unknown> };
+		expect(preload['source-layer']).toBe('ocean');
+		expect(preload.paint).toEqual({ 'fill-opacity': 0 });
+	});
+
 	it('adds the online source from its TileJSON and records the split', () => {
 		const result = splitByZoom(style(), online, 9);
 		expect(result.sources['base-online']).toEqual({
 			type: 'vector',
 			tiles: ['https://tiles.example.org/{z}/{x}/{y}'],
-			minzoom: 9,
+			minzoom: 8,
 			maxzoom: 14,
 			attribution: '© OSM',
 		});
@@ -85,6 +94,5 @@ describe('offlineLayerId', () => {
 	it('is the id of the layer a copy was made from', () => {
 		expect(offlineLayerId('water-online')).toBe('water');
 		expect(offlineLayerId('water')).toBe('water');
-		expect(offlineLayerId('water-bridge')).toBe('water');
 	});
 });
