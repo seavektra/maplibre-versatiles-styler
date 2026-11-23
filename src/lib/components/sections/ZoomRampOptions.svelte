@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { Snippet } from 'svelte';
 	import InputNumber from '../inputs/InputNumber.svelte';
 	import { RAMP_END_ZOOM, RAMP_START_ZOOM, type ZoomRamp } from '../../style/zoom_ramp';
 
@@ -9,6 +10,7 @@
 		start,
 		max = 1,
 		disabled = false,
+		startField,
 	}: {
 		/** The zooms and the value at max zoom, edited in place. */
 		ramp: ZoomRamp;
@@ -20,6 +22,8 @@
 		start: number;
 		max?: number;
 		disabled?: boolean;
+		/** The field of the value at Min zoom, which the caller owns, shown before the one at Max zoom. */
+		startField: Snippet;
 	} = $props();
 </script>
 
@@ -49,13 +53,19 @@
 	stepper
 	stepFrom={24}
 />
+{@render startField()}
 <InputNumber
 	label="{valueLabel} at max zoom"
-	hint="{valueLabel} changes evenly from its value at Min zoom (z{RAMP_START_ZOOM} without one) to this at Max zoom (z{RAMP_END_ZOOM} without one), and holds beyond. Empty keeps {valueLabel.toLowerCase()} the same at every zoom."
+	hint="{valueLabel} changes evenly from its value at Min zoom to this at Max zoom while zooming. Without Min zoom the change starts at z{RAMP_START_ZOOM}, without Max zoom it ends at z{RAMP_END_ZOOM}. The same as at Min zoom keeps it constant."
 	{disabled}
-	placeholder="same ({Math.round(start * 100)}%)"
-	bind:value={ramp.end}
-	defaultValue={undefined}
+	bind:value={
+		() => ramp.end ?? start,
+		(v) => {
+			if (v === undefined || v === start) delete ramp.end;
+			else ramp.end = v;
+		}
+	}
+	defaultValue={start}
 	min={0}
 	{max}
 	scale={100}

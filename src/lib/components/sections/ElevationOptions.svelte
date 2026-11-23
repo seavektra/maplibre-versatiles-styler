@@ -73,17 +73,21 @@
 />
 {#if features.hillshade}
 	<div class="nested">
-		<InputNumber
-			label="Intensity"
-			hint="How strongly slopes are shaded: at Min zoom, and at every zoom unless Intensity at max zoom is set."
-			{disabled}
-			bind:value={features.hillshade.exaggeration}
-			defaultValue={hillshadeDefaults.exaggeration}
-			min={0}
-			max={1}
-			scale={100}
-			unit="%"
-		/>
+		{#if hillshadeZooms}
+			<ZoomRampOptions
+				bind:ramp={hillshadeZooms}
+				what="The hillshade"
+				valueLabel="Intensity"
+				start={features.hillshade.exaggeration}
+				{disabled}
+			>
+				{#snippet startField()}
+					{@render intensity('Intensity at min zoom')}
+				{/snippet}
+			</ZoomRampOptions>
+		{:else}
+			{@render intensity('Intensity')}
+		{/if}
 		<InputColor
 			label="Shadow Color"
 			{disabled}
@@ -105,15 +109,6 @@
 			bind:value={features.hillshade.accentColor}
 			defaultValue={hillshadeDefaults.accentColor}
 		/>
-		{#if hillshadeZooms}
-			<ZoomRampOptions
-				bind:ramp={hillshadeZooms}
-				what="The hillshade"
-				valueLabel="Intensity"
-				start={features.hillshade.exaggeration}
-				{disabled}
-			/>
-		{/if}
 	</div>
 {/if}
 {#if colorRelief !== undefined}
@@ -141,23 +136,44 @@
 					{ value: 'muted', label: 'Muted' },
 				]}
 			/>
-			<InputNumber
-				label="Opacity"
-				{disabled}
-				bind:value={colorRelief.opacity}
-				defaultValue={DEFAULT_COLOR_RELIEF.opacity}
-				min={0}
-				max={1}
-				scale={100}
-				unit="%"
-			/>
 			<ZoomRampOptions
 				bind:ramp={colorRelief}
 				what="The colour by height"
 				valueLabel="Opacity"
 				start={colorRelief.opacity}
 				{disabled}
-			/>
+			>
+				{#snippet startField()}
+					{#if colorRelief}
+						<InputNumber
+							label="Opacity at min zoom"
+							{disabled}
+							bind:value={colorRelief.opacity}
+							defaultValue={DEFAULT_COLOR_RELIEF.opacity}
+							min={0}
+							max={1}
+							scale={100}
+							unit="%"
+						/>
+					{/if}
+				{/snippet}
+			</ZoomRampOptions>
 		</div>
 	{/if}
 {/if}
+
+{#snippet intensity(label: string)}
+	{#if features.hillshade}
+		<InputNumber
+			{label}
+			hint="How strongly slopes are shaded."
+			{disabled}
+			bind:value={features.hillshade.exaggeration}
+			defaultValue={hillshadeDefaults.exaggeration}
+			min={0}
+			max={1}
+			scale={100}
+			unit="%"
+		/>
+	{/if}
+{/snippet}
