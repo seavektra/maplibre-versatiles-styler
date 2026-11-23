@@ -853,10 +853,7 @@
 	});
 	$effect(() => {
 		const relief = $state.snapshot(colorRelief) as ColorRelief;
-		hashManager?.setLayerParam(
-			'relief',
-			relief ? encodeConfig({ ...relief }) : null
-		);
+		hashManager?.setLayerParam('relief', relief ? encodeConfig({ ...relief }) : null);
 	});
 	$effect(() => {
 		const shade = $state.snapshot(hillshadeZooms) as ZoomRamp;
