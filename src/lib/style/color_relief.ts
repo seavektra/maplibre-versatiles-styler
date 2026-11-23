@@ -4,6 +4,7 @@ import type {
 	StyleSpecification,
 } from '@maplibre/maplibre-gl-style-spec';
 import type { TileJSONSpecification } from '@versatiles/style';
+import { parseZoomRamp, withZoomRamp, type ZoomRamp } from './zoom_ramp';
 
 /** The metadata key of an exported style that records the colour by height, for Import. */
 export const METADATA_RELIEF_KEY = 'seavektra:colorRelief';
@@ -34,8 +35,11 @@ export const COLOR_RELIEF_RAMPS = {
 
 export type ColorReliefRamp = keyof typeof COLOR_RELIEF_RAMPS;
 
-/** Colour by height: off, or on with a ramp and an opacity. */
-export type ColorRelief = false | { ramp: ColorReliefRamp; opacity: number };
+/**
+ * Colour by height: off, or on with a ramp, an opacity, and the zooms it is drawn at with the opacity
+ * it comes to at the top of them (`end`).
+ */
+export type ColorRelief = false | ({ ramp: ColorReliefRamp; opacity: number } & ZoomRamp);
 
 export const DEFAULT_COLOR_RELIEF: Exclude<ColorRelief, false> = { ramp: 'atlas', opacity: 1 };
 
@@ -44,6 +48,7 @@ export function parseColorRelief(value: unknown): ColorRelief {
 	if (typeof value !== 'object' || value === null) return false;
 	const { ramp, opacity } = value as Record<string, unknown>;
 	return {
+		...parseZoomRamp(value),
 		ramp:
 			typeof ramp === 'string' && ramp in COLOR_RELIEF_RAMPS
 				? (ramp as ColorReliefRamp)
@@ -89,15 +94,19 @@ export function withColorRelief(
 		if (!elevation) return style;
 		sources[ELEVATION_SOURCE_ID] = elevationSource(elevation);
 	}
-	const layer: ColorReliefLayerSpecification = {
-		id: COLOR_RELIEF_LAYER_ID,
-		type: 'color-relief',
-		source: ELEVATION_SOURCE_ID,
-		paint: {
-			...colorReliefColor(relief.ramp),
-			'color-relief-opacity': relief.opacity,
+	const layer = withZoomRamp<ColorReliefLayerSpecification>(
+		{
+			id: COLOR_RELIEF_LAYER_ID,
+			type: 'color-relief',
+			source: ELEVATION_SOURCE_ID,
+			paint: {
+				...colorReliefColor(relief.ramp),
+				'color-relief-opacity': relief.opacity,
+			},
 		},
-	};
+		relief,
+		'color-relief-opacity'
+	);
 	const layers = [...style.layers];
 	layers.splice(insertIndex(layers), 0, layer);
 	return { ...style, sources, layers };

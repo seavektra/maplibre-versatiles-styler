@@ -13,6 +13,12 @@ import { METADATA_ROLES_KEY, parseLayerRoles, type LayerRoles } from '../style/r
 import { METADATA_CHART_KEY, parseOverChart } from '../style/chart_anchor';
 import { METADATA_RELIEF_KEY, parseColorRelief, type ColorRelief } from '../style/color_relief';
 import {
+	METADATA_HILLSHADE_KEY,
+	isEmptyRamp,
+	parseZoomRamp,
+	type ZoomRamp,
+} from '../style/zoom_ramp';
+import {
 	toStyleKey,
 	DEFAULT_STYLE_KEY,
 	METADATA_SOURCES_KEY,
@@ -68,6 +74,8 @@ export interface ImportResult {
 	overChart?: string[];
 	/** The colour by height, from a styler link or a style.json it exported: off where they name none. */
 	colorRelief?: ColorRelief;
+	/** The hillshade's zooms and intensity at max zoom, as for `colorRelief`. */
+	hillshadeZooms?: ZoomRamp;
 }
 
 /** The exact paths report nothing: there was nothing to reconstruct. */
@@ -197,6 +205,7 @@ function parseLink(text: string): ImportOutcome | undefined {
 	const layerRoles = parseLayerRoles(decodeConfig(params.get('roles') ?? ''));
 	const chart = decodeConfig(params.get('chart') ?? '');
 	const relief = parseColorRelief(decodeConfig(params.get('relief') ?? ''));
+	const shade = parseZoomRamp(decodeConfig(params.get('shade') ?? ''));
 	if (encoded && config === null) {
 		return {
 			ok: false,
@@ -216,6 +225,7 @@ function parseLink(text: string): ImportOutcome | undefined {
 			...(Object.keys(layerRoles).length > 0 ? { layerRoles } : {}),
 			...(chart ? { overChart: parseOverChart(chart.over) } : {}),
 			...(relief ? { colorRelief: relief } : {}),
+			...(isEmptyRamp(shade) ? {} : { hillshadeZooms: shade }),
 		},
 	};
 }
@@ -290,12 +300,16 @@ function fromGuess(guess: OptionsGuess): ImportOutcome {
  */
 function layerSettingsOf(
 	style: StyleSpecification
-): Pick<ImportResult, 'layerZooms' | 'layerRoles' | 'overChart' | 'colorRelief'> {
+): Pick<
+	ImportResult,
+	'layerZooms' | 'layerRoles' | 'overChart' | 'colorRelief' | 'hillshadeZooms'
+> {
 	const metadata = style.metadata as Record<string, unknown> | undefined;
 	const layerZooms = parseLayerZooms(metadata?.[METADATA_ZOOMS_KEY]);
 	const layerRoles = parseLayerRoles(metadata?.[METADATA_ROLES_KEY]);
 	const chart = metadata?.[METADATA_CHART_KEY];
 	const relief = parseColorRelief(metadata?.[METADATA_RELIEF_KEY]);
+	const shade = parseZoomRamp(metadata?.[METADATA_HILLSHADE_KEY]);
 	return {
 		...(Object.keys(layerZooms).length > 0 ? { layerZooms } : {}),
 		...(Object.keys(layerRoles).length > 0 ? { layerRoles } : {}),
@@ -303,6 +317,7 @@ function layerSettingsOf(
 			? { overChart: parseOverChart((chart as Record<string, unknown>).over) }
 			: {}),
 		...(relief ? { colorRelief: relief } : {}),
+		...(isEmptyRamp(shade) ? {} : { hillshadeZooms: shade }),
 	};
 }
 

@@ -99,6 +99,13 @@
 		withColorRelief,
 		type ColorRelief,
 	} from '../style/color_relief';
+	import {
+		METADATA_HILLSHADE_KEY,
+		isEmptyRamp,
+		parseZoomRamp,
+		withHillshadeRamp,
+		type ZoomRamp,
+	} from '../style/zoom_ramp';
 	import InspectPanel from './InspectPanel.svelte';
 	import { inspectClick, type InspectableMap, type InspectClick } from '../style/inspect_tiles';
 	import ImportDialog from './ImportDialog.svelte';
@@ -303,6 +310,8 @@
 	let overChart = $state<string[]>([...DEFAULT_OVER_CHART]);
 	/** Colour by height, drawn from the elevation tiles under the hillshade. */
 	let colorRelief = $state<ColorRelief>(false);
+	/** The hillshade's zooms and its intensity at max zoom. */
+	let hillshadeZooms = $state<ZoomRamp>({});
 	/** What the source roles of the style on the map come to, while it draws online tiles above. */
 	let roleState = $state.raw<RoleStatus | undefined>();
 	/**
@@ -417,6 +426,7 @@
 		// The anchor is there with or without online tiles, so that every export marks where the chart goes.
 		style = withChartAnchor(style, $state.snapshot(overChart) as string[], groups);
 		style = withColorRelief(style, relief, stateSources.elevation);
+		style = withHillshadeRamp(style, $state.snapshot(hillshadeZooms) as ZoomRamp);
 		return { style, rendered: { styleKey, sources: sourceConfig, options: state }, roles };
 	}
 
@@ -680,6 +690,7 @@
 		const zooms = $state.snapshot(layerZooms) as LayerZooms;
 		const roles = $state.snapshot(layerRoles) as LayerRoles;
 		const relief = $state.snapshot(colorRelief) as ColorRelief;
+		const shade = $state.snapshot(hillshadeZooms) as ZoomRamp;
 		if (isSatellite) return style;
 		return {
 			...style,
@@ -688,6 +699,7 @@
 				...(Object.keys(zooms).length > 0 ? { [METADATA_ZOOMS_KEY]: zooms } : {}),
 				...(Object.keys(roles).length > 0 ? { [METADATA_ROLES_KEY]: roles } : {}),
 				...(relief ? { [METADATA_RELIEF_KEY]: relief } : {}),
+				...(isEmptyRamp(shade) ? {} : { [METADATA_HILLSHADE_KEY]: shade }),
 			},
 		} as StyleSpecification;
 	});
@@ -712,6 +724,7 @@
 		layerRoles = result.layerRoles ?? {};
 		overChart = result.overChart ?? [...DEFAULT_OVER_CHART];
 		colorRelief = result.colorRelief ?? false;
+		hillshadeZooms = result.hillshadeZooms ?? {};
 		// Only the warnings are counted here: the notes are true of almost every import, and counting
 		// them would make a clean one look like it went badly.
 		const worth = result.diagnostics.filter((d) => d.severity === 'warning').length;
@@ -769,7 +782,12 @@
 		if (param === 'zooms') layerZooms = zoomsFromHash(encoded);
 		else if (param === 'roles') layerRoles = rolesFromHash(encoded);
 		else if (param === 'relief') colorRelief = reliefFromHash(encoded);
+		else if (param === 'shade') hillshadeZooms = shadeFromHash(encoded);
 		else overChart = chartFromHash(encoded);
+	}
+
+	function shadeFromHash(encoded: string | null | undefined): ZoomRamp {
+		return encoded ? parseZoomRamp(decodeConfig(encoded)) : {};
 	}
 
 	function reliefFromHash(encoded: string | null | undefined): ColorRelief {
@@ -807,6 +825,7 @@
 			layerRoles = rolesFromHash(layers.roles);
 			overChart = chartFromHash(layers.chart);
 			colorRelief = reliefFromHash(layers.relief);
+			hillshadeZooms = shadeFromHash(layers.shade);
 			if (panelOpen !== undefined) paneOpen = panelOpen;
 			const hashSources = sourcesFromHash(sources);
 			if (hashSources) applySources(hashSources);
@@ -834,7 +853,17 @@
 	});
 	$effect(() => {
 		const relief = $state.snapshot(colorRelief) as ColorRelief;
-		hashManager?.setLayerParam('relief', relief ? encodeConfig(relief) : null);
+		hashManager?.setLayerParam(
+			'relief',
+			relief ? encodeConfig({ ...relief }) : null
+		);
+	});
+	$effect(() => {
+		const shade = $state.snapshot(hillshadeZooms) as ZoomRamp;
+		hashManager?.setLayerParam(
+			'shade',
+			isEmptyRamp(shade) ? null : encodeConfig(shade as Record<string, unknown>)
+		);
 	});
 	// And so are the tile sources, unless they are the page's own.
 	$effect(() => {
@@ -1001,6 +1030,7 @@
 				{roleState}
 				bind:overChart
 				bind:colorRelief
+				bind:hillshadeZooms
 			/>
 		{/if}
 		<!-- The project itself, which is neither the map nor the style: out of the action rows. -->

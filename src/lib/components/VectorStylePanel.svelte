@@ -6,6 +6,7 @@
 	import type { RoleStatus } from '../style/role_status';
 	import { DEFAULT_OVER_CHART, overChartChanges } from '../style/chart_anchor';
 	import type { ColorRelief } from '../style/color_relief';
+	import { isEmptyRamp, type ZoomRamp } from '../style/zoom_ramp';
 	import type { StyleSpecification } from 'maplibre-gl';
 	import SidebarSection from './SidebarSection.svelte';
 	import ColorOptions from './sections/ColorOptions.svelte';
@@ -37,6 +38,7 @@
 		roleState,
 		overChart = $bindable(),
 		colorRelief = $bindable(false),
+		hillshadeZooms = $bindable({}),
 	}: {
 		options: VectorState;
 		defaults: VectorState;
@@ -69,6 +71,8 @@
 		overChart: string[];
 		/** Colour by height, drawn from the elevation tiles. */
 		colorRelief?: ColorRelief;
+		/** The hillshade's zooms and intensity at max zoom. */
+		hillshadeZooms?: ZoomRamp;
 	} = $props();
 
 	const changes = (...paths: string[]) => configChangeCount(config, paths);
@@ -97,6 +101,7 @@
 		options.features.terrain = defaults.features.terrain;
 		options.features.hillshade = defaults.features.hillshade;
 		colorRelief = false;
+		hillshadeZooms = {};
 	}
 	function resetMap() {
 		options.projection = defaults.projection;
@@ -194,11 +199,14 @@
 		? '3D elevation features rendered from an elevation source.'
 		: 'Unavailable — this server provides no elevation tiles.'}
 	onReset={hasElevation ? resetElevation : undefined}
-	changes={changes('features.terrain', 'features.hillshade') + (colorRelief ? 1 : 0)}
+	changes={changes('features.terrain', 'features.hillshade') +
+		(colorRelief ? 1 : 0) +
+		(isEmptyRamp(hillshadeZooms) ? 0 : 1)}
 >
 	<ElevationOptions
 		bind:features={options.features}
 		bind:colorRelief
+		bind:hillshadeZooms
 		lit={options.light !== false}
 		disabled={!hasElevation}
 	/>

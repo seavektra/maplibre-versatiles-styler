@@ -46,10 +46,10 @@ export interface SourcesHash {
 
 /**
  * The settings of layer groups the hash carries, each as one encoded parameter: their zoom ranges,
- * their source roles and the groups drawn over the chart. `relief` is the colour by height, which the
- * styler adds to the style the same way.
+ * their source roles and the groups drawn over the chart. `relief` is the colour by height and `shade`
+ * the hillshade's zooms, which the styler adds to the style the same way.
  */
-export const LAYER_PARAMS = ['zooms', 'roles', 'chart', 'relief'] as const;
+export const LAYER_PARAMS = ['zooms', 'roles', 'chart', 'relief', 'shade'] as const;
 export type LayerParam = (typeof LAYER_PARAMS)[number];
 
 /** The encoded layer group settings a hash names, by parameter; one it does not name is left out. */

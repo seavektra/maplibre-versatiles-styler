@@ -5,6 +5,8 @@
 	import InputColor from '../inputs/InputColor.svelte';
 	import InputNumber from '../inputs/InputNumber.svelte';
 	import InputSegmented from '../inputs/InputSegmented.svelte';
+	import ZoomRampOptions from './ZoomRampOptions.svelte';
+	import type { ZoomRamp } from '../../style/zoom_ramp';
 	import {
 		DEFAULT_COLOR_RELIEF,
 		type ColorRelief,
@@ -14,12 +16,15 @@
 	let {
 		features = $bindable(),
 		colorRelief = $bindable(),
+		hillshadeZooms = $bindable(),
 		lit,
 		disabled = false,
 	}: {
 		features: { terrain: ResolvedTerrain; hillshade: ResolvedHillshade };
 		/** Colour by height, which the styler adds to the style; there is none in a satellite style. */
 		colorRelief?: ColorRelief;
+		/** The hillshade's zooms and intensity at max zoom; none in a satellite style. */
+		hillshadeZooms?: ZoomRamp;
 		/** Whether the map has a light, which shades the hillshade without its accent color. */
 		lit: boolean;
 		disabled?: boolean;
@@ -70,7 +75,7 @@
 	<div class="nested">
 		<InputNumber
 			label="Intensity"
-			hint="How strongly slopes are shaded."
+			hint="How strongly slopes are shaded: at Min zoom, and at every zoom unless Intensity at max zoom is set."
 			{disabled}
 			bind:value={features.hillshade.exaggeration}
 			defaultValue={hillshadeDefaults.exaggeration}
@@ -100,6 +105,15 @@
 			bind:value={features.hillshade.accentColor}
 			defaultValue={hillshadeDefaults.accentColor}
 		/>
+		{#if hillshadeZooms}
+			<ZoomRampOptions
+				bind:ramp={hillshadeZooms}
+				what="The hillshade"
+				valueLabel="Intensity"
+				start={features.hillshade.exaggeration}
+				{disabled}
+			/>
+		{/if}
 	</div>
 {/if}
 {#if colorRelief !== undefined}
@@ -136,6 +150,13 @@
 				max={1}
 				scale={100}
 				unit="%"
+			/>
+			<ZoomRampOptions
+				bind:ramp={colorRelief}
+				what="The colour by height"
+				valueLabel="Opacity"
+				start={colorRelief.opacity}
+				{disabled}
 			/>
 		</div>
 	{/if}
