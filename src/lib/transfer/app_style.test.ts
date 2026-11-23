@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { StyleSpecification } from 'maplibre-gl';
-import { APP_SOURCE_URL, appFont, appStyle } from './app_style';
+import { APP_ELEVATION_URL, APP_SOURCE_URL, appFont, appStyle } from './app_style';
 import { baseMapSourceId, splitByZoom } from '../style/online';
 import { CHART_ANCHOR_ID, METADATA_CHART_KEY, withChartAnchor } from '../style/chart_anchor';
 import { METADATA_ROLES_KEY } from '../style/roles';
@@ -74,6 +74,47 @@ describe('appStyle', () => {
 	it('leaves out the other sources and the layers that draw from them', () => {
 		const ids = appStyle(exported()).layers.map((layer) => layer.id);
 		expect(ids).toEqual(['background', 'water-area', 'street', 'label-place-city']);
+	});
+
+	it('keeps the elevation behind its placeholder, with hillshade, colour by height and terrain', () => {
+		const style = exported();
+		style.sources.elevation = {
+			type: 'raster-dem',
+			tiles: ['pmtiles://http://localhost/tilesets/elevation.pmtiles/{z}/{x}/{y}'],
+			encoding: 'terrarium',
+			maxzoom: 10,
+			attribution: 'Mapterhorn',
+		};
+		style.sources['elevation-terrain'] = { ...style.sources.elevation };
+		style.layers.splice(
+			1,
+			0,
+			{ id: 'seavektra-color-relief', type: 'color-relief', source: 'elevation' },
+			{ id: 'hillshade', type: 'hillshade', source: 'elevation' }
+		);
+		style.terrain = { source: 'elevation-terrain', exaggeration: 1 };
+		const app = appStyle(style);
+		const placeholder = {
+			type: 'raster-dem',
+			url: APP_ELEVATION_URL,
+			encoding: 'terrarium',
+			tileSize: 512,
+			attribution: 'Mapterhorn',
+		};
+		expect(app.sources.elevation).toEqual(placeholder);
+		expect(app.sources['elevation-terrain']).toEqual(placeholder);
+		expect(app.layers.map((layer) => layer.id).slice(0, 3)).toEqual([
+			'background',
+			'seavektra-color-relief',
+			'hillshade',
+		]);
+		expect(app.terrain).toEqual({ source: 'elevation-terrain', exaggeration: 1 });
+	});
+
+	it('drops a terrain whose source it leaves out', () => {
+		const style = exported();
+		style.terrain = { source: 'versatiles-landcover' };
+		expect(appStyle(style).terrain).toBeUndefined();
 	});
 
 	it('labels with the app fonts and leaves glyphs and sprite to the app', () => {

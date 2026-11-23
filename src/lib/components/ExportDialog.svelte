@@ -3,7 +3,7 @@
 	import Modal from './Modal.svelte';
 	import CodeBlock from './CodeBlock.svelte';
 	import { downloadStyle, styleJson, type JsonFormat } from '../transfer/export';
-	import { APP_SOURCE_URL, appStyle } from '../transfer/app_style';
+	import { APP_ELEVATION_URL, APP_SOURCE_URL, appStyle } from '../transfer/app_style';
 	import { onlineSplit } from '../style/online';
 	import { DOCS } from '../transfer/docs';
 
@@ -129,9 +129,12 @@
 				<p class="dialog-note">
 					For the <strong>SeaVektra app</strong>: the base map source reads from
 					<code>{APP_SOURCE_URL}</code>, which the app replaces with its bundled archive, and has no
-					zoom range of its own, so MapLibre takes it from the archive. Land cover, satellite and
-					elevation are left out, labels use the app's Open Sans, and the app provides glyphs and
-					icons. Chart layers go after the <code>seavektra-chart</code> layer; set the global state
+					zoom range of its own, so MapLibre takes it from the archive. Hillshade, colour by height
+					and terrain read their elevation from <code>{APP_ELEVATION_URL}</code>, the app's bundled
+					Terrarium archive of 512 px tiles. Land cover and satellite are left out, labels use the
+					app's Open Sans, and the app provides glyphs and icons. Chart layers go after the
+					<code>seavektra-chart</code>
+					layer; set the global state
 					<code>online</code> to false when there is no network.
 				</p>
 				{#if online}

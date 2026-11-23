@@ -7,6 +7,12 @@ import { baseMapSourceId, onlineSplit } from '../style/online';
  */
 export const APP_SOURCE_URL = '{BASE_MAP_URL}';
 
+/**
+ * The placeholder the SeaVektra app replaces with the `pmtiles://` URL of the elevation archive it
+ * bundles: Terrarium-encoded, 512 px tiles (Mapterhorn).
+ */
+export const APP_ELEVATION_URL = '{ELEVATION_URL}';
+
 /** The label fonts the SeaVektra app bundles, by the weight or style a font stack names. */
 const APP_FONTS = {
 	regular: 'Open Sans Regular',
@@ -27,8 +33,11 @@ type Layer = StyleSpecification['layers'][number];
  *   wider than the archive's, MapLibre asks for tiles the archive does not have and draws nothing there.
  * - A style that switches to online tiles from a zoom on (`splitByZoom`) keeps their source as it is,
  *   with the layers that draw from it: the app reads them from the server above that zoom.
- * - Every other source (land cover, satellite, elevation) and the layers that draw from it are left
- *   out: the app bundles only the base map archive.
+ * - Elevation sources (`raster-dem`: hillshade, colour by height, terrain) are kept with their layers
+ *   and the `terrain`, as Terrarium tiles of 512 px behind {@link APP_ELEVATION_URL}: the app bundles
+ *   an elevation archive next to the base map. Their own tiles and zoom range are left out, as the
+ *   base map's are. A `terrain` whose source is not kept goes too.
+ * - Every other source (land cover, satellite) and the layers that draw from it are left out.
  * - The `seavektra-chart` anchor layer (it has no source), the root `state` (`online`), the `-overlap`
  *   and `-fallback` copies (their offline source keeps its id, so its url is the placeholder) and the
  *   `seavektra:*` metadata are kept as they are.
@@ -39,7 +48,7 @@ export function appStyle(style: StyleSpecification): StyleSpecification {
 	const split = onlineSplit(style);
 	const sourceId = split?.offline ?? baseMapSourceId(style);
 	const onlineId = split && style.sources[split.online] ? split.online : undefined;
-	const { glyphs: _glyphs, sprite: _sprite, ...rest } = style;
+	const { glyphs: _glyphs, sprite: _sprite, terrain, ...rest } = style;
 	const sources: Record<string, Source> = {};
 	if (sourceId !== undefined) {
 		const source = style.sources[sourceId] as { attribution?: string };
@@ -50,12 +59,25 @@ export function appStyle(style: StyleSpecification): StyleSpecification {
 		};
 	}
 	if (onlineId !== undefined) sources[onlineId] = style.sources[onlineId];
+	for (const [id, source] of Object.entries(style.sources)) {
+		if (source.type !== 'raster-dem') continue;
+		sources[id] = {
+			type: 'raster-dem',
+			url: APP_ELEVATION_URL,
+			encoding: 'terrarium',
+			tileSize: 512,
+			...(source.attribution !== undefined ? { attribution: source.attribution } : {}),
+		};
+	}
 	const layers = style.layers
-		.filter(
-			(layer) => !('source' in layer) || layer.source === sourceId || layer.source === onlineId
-		)
+		.filter((layer) => !('source' in layer) || layer.source in sources)
 		.map(withAppFonts);
-	return { ...rest, sources, layers } as StyleSpecification;
+	return {
+		...rest,
+		...(terrain && terrain.source in sources ? { terrain } : {}),
+		sources,
+		layers,
+	} as StyleSpecification;
 }
 
 /**
