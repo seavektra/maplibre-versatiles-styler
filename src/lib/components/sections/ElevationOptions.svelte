@@ -105,7 +105,7 @@
 {#if colorRelief !== undefined}
 	<InputCheckbox
 		label="Colour by height"
-		hint="Tint the land by its height, from green lowlands to brown and white peaks, under the hillshade. The sea stays clear: the elevation tiles put it at 0 m."
+		hint="Colour bare land by its height, from green lowlands to brown and white peaks. Land use such as forests, parks and towns is drawn over it in its own colours, and the sea over it cuts it back to the coastline. Turn the Land layers off to see the height colours alone."
 		{disabled}
 		bind:value={
 			() => colorRelief !== false, (v) => (colorRelief = v ? { ...DEFAULT_COLOR_RELIEF } : false)

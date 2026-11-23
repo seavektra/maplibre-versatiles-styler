@@ -37,7 +37,7 @@ export type ColorReliefRamp = keyof typeof COLOR_RELIEF_RAMPS;
 /** Colour by height: off, or on with a ramp and an opacity. */
 export type ColorRelief = false | { ramp: ColorReliefRamp; opacity: number };
 
-export const DEFAULT_COLOR_RELIEF: Exclude<ColorRelief, false> = { ramp: 'atlas', opacity: 0.5 };
+export const DEFAULT_COLOR_RELIEF: Exclude<ColorRelief, false> = { ramp: 'atlas', opacity: 1 };
 
 /** The setting a link or a stored state names, or off for anything it cannot read. */
 export function parseColorRelief(value: unknown): ColorRelief {
@@ -74,9 +74,9 @@ export function colorReliefColor(ramp: ColorReliefRamp): ColorReliefLayerSpecifi
 }
 
 /**
- * The style with a colour-by-height layer, drawn over the land fills and under the hillshade, so the
- * shading stays on top. It draws from the style's elevation source; a style without one (hillshade and
- * terrain off) gets it from `elevation`. Without either, or with the setting off, the style is unchanged.
+ * The style with a colour-by-height layer, drawn under every fill of the style (see `insertIndex`).
+ * It draws from the style's elevation source; a style without one (hillshade and terrain off) gets
+ * it from `elevation`. Without either, or with the setting off, the style is unchanged.
  */
 export function withColorRelief(
 	style: StyleSpecification,
@@ -103,17 +103,14 @@ export function withColorRelief(
 	return { ...style, sources, layers };
 }
 
-/** Before the hillshade, or else after the last fill, as `@versatiles/style` places the hillshade. */
+/**
+ * After the backgrounds the style starts with: under the ocean, the land cover and the land-use fills.
+ * The colour is that of bare land, and every fill drawn over it keeps its own colour. The ocean cuts
+ * it back to the coastline, which the much coarser elevation tiles would otherwise blur out over the sea.
+ */
 function insertIndex(layers: StyleSpecification['layers']): number {
-	const hillshade = layers.findIndex((l) => l.type === 'hillshade');
-	if (hillshade >= 0) return hillshade;
-	let index = 0;
-	for (let i = 0; i < layers.length; i++) {
-		const t = layers[i].type;
-		if (t === 'background' || t === 'fill' || t === 'raster') index = i + 1;
-		else break;
-	}
-	return index;
+	const first = layers.findIndex((l) => l.type !== 'background');
+	return first < 0 ? layers.length : first;
 }
 
 function elevationSource(tj: TileJSONSpecification): RasterDEMSourceSpecification {

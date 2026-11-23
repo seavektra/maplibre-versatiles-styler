@@ -41,20 +41,20 @@ describe('withColorRelief', () => {
 		expect(withColorRelief(style, false)).toBe(style);
 	});
 
-	it('goes right under the hillshade, on its source', () => {
+	it('goes under the ocean and the land fills, on the hillshade source', () => {
 		const style = withColorRelief(base(true), DEFAULT_COLOR_RELIEF);
 		expect(ids(style)).toEqual([
 			'background',
+			COLOR_RELIEF_LAYER_ID,
 			'water-ocean',
 			'land-forest',
-			COLOR_RELIEF_LAYER_ID,
 			'hillshade',
 			'water-river',
 			'later-fill',
 		]);
-		const layer = style.layers[3] as { source: string; paint: Record<string, unknown> };
+		const layer = style.layers[1] as { source: string; paint: Record<string, unknown> };
 		expect(layer.source).toBe('elevation');
-		expect(layer.paint['color-relief-opacity']).toBe(0.5);
+		expect(layer.paint['color-relief-opacity']).toBe(1);
 		// Sea level stays clear.
 		expect((layer.paint['color-relief-color'] as unknown[]).slice(3, 5)).toEqual([
 			0,
@@ -62,14 +62,14 @@ describe('withColorRelief', () => {
 		]);
 	});
 
-	it('adds the elevation source and goes after the first run of fills without a hillshade', () => {
+	it('adds the elevation source when the style has none', () => {
 		const style = withColorRelief(base(false), DEFAULT_COLOR_RELIEF, {
 			tilejson: '3.0.0',
 			tiles: ['pmtiles://elevation/{z}/{x}/{y}'],
 			tile_size: 512,
 			maxzoom: 10,
 		});
-		expect(ids(style).indexOf(COLOR_RELIEF_LAYER_ID)).toBe(3);
+		expect(ids(style).indexOf(COLOR_RELIEF_LAYER_ID)).toBe(1);
 		expect(style.sources.elevation).toEqual({
 			type: 'raster-dem',
 			tiles: ['pmtiles://elevation/{z}/{x}/{y}'],
