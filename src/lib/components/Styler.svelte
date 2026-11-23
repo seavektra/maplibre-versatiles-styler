@@ -93,6 +93,12 @@
 		parseOverChart,
 		withChartAnchor,
 	} from '../style/chart_anchor';
+	import {
+		METADATA_RELIEF_KEY,
+		parseColorRelief,
+		withColorRelief,
+		type ColorRelief,
+	} from '../style/color_relief';
 	import InspectPanel from './InspectPanel.svelte';
 	import { inspectClick, type InspectableMap, type InspectClick } from '../style/inspect_tiles';
 	import ImportDialog from './ImportDialog.svelte';
@@ -295,6 +301,8 @@
 	let layerRoles = $state<LayerRoles>({});
 	/** The layer groups drawn over the chart, by group path. */
 	let overChart = $state<string[]>([...DEFAULT_OVER_CHART]);
+	/** Colour by height, drawn from the elevation tiles under the hillshade. */
+	let colorRelief = $state<ColorRelief>(false);
 	/** What the source roles of the style on the map come to, while it draws online tiles above. */
 	let roleState = $state.raw<RoleStatus | undefined>();
 	/**
@@ -368,7 +376,8 @@
 			};
 		}
 		const state = $state.snapshot(vectorState) as VectorState;
-		const stateSources = styleSources(true, state.features);
+		const relief = $state.snapshot(colorRelief) as ColorRelief;
+		const stateSources = styleSources(true, state.features, relief !== false);
 		if (!stateSources?.vector) return undefined;
 		// The land cover goes under Shortbread only.
 		if (schema === 'shortbread') {
@@ -407,19 +416,21 @@
 		}
 		// The anchor is there with or without online tiles, so that every export marks where the chart goes.
 		style = withChartAnchor(style, $state.snapshot(overChart) as string[], groups);
+		style = withColorRelief(style, relief, stateSources.elevation);
 		return { style, rendered: { styleKey, sources: sourceConfig, options: state }, roles };
 	}
 
 	function styleSources(
 		needsOsm: boolean,
-		features: VectorState['features'] | SatelliteState['features']
+		features: VectorState['features'] | SatelliteState['features'],
+		needsElevation = false
 	): StyleSources | undefined {
 		const result: StyleSources = { schema };
 		if (needsOsm) {
 			if (vectorTileJSON === undefined) return undefined;
 			if (vectorTileJSON) result.vector = vectorTileJSON;
 		}
-		if (features.terrain !== false || features.hillshade !== false) {
+		if (needsElevation || features.terrain !== false || features.hillshade !== false) {
 			if (elevationTileJSON === undefined) return undefined;
 			if (elevationTileJSON) result.elevation = elevationTileJSON;
 		}
@@ -668,6 +679,7 @@
 		// anchor's record; the records let Import restore the fields that set them.
 		const zooms = $state.snapshot(layerZooms) as LayerZooms;
 		const roles = $state.snapshot(layerRoles) as LayerRoles;
+		const relief = $state.snapshot(colorRelief) as ColorRelief;
 		if (isSatellite) return style;
 		return {
 			...style,
@@ -675,6 +687,7 @@
 				...(style.metadata as object),
 				...(Object.keys(zooms).length > 0 ? { [METADATA_ZOOMS_KEY]: zooms } : {}),
 				...(Object.keys(roles).length > 0 ? { [METADATA_ROLES_KEY]: roles } : {}),
+				...(relief ? { [METADATA_RELIEF_KEY]: relief } : {}),
 			},
 		} as StyleSpecification;
 	});
@@ -698,6 +711,7 @@
 		layerZooms = result.layerZooms ?? {};
 		layerRoles = result.layerRoles ?? {};
 		overChart = result.overChart ?? [...DEFAULT_OVER_CHART];
+		colorRelief = result.colorRelief ?? false;
 		// Only the warnings are counted here: the notes are true of almost every import, and counting
 		// them would make a clean one look like it went badly.
 		const worth = result.diagnostics.filter((d) => d.severity === 'warning').length;
@@ -754,7 +768,12 @@
 	function applyLayerParam(param: LayerParam, encoded: string | null | undefined) {
 		if (param === 'zooms') layerZooms = zoomsFromHash(encoded);
 		else if (param === 'roles') layerRoles = rolesFromHash(encoded);
+		else if (param === 'relief') colorRelief = reliefFromHash(encoded);
 		else overChart = chartFromHash(encoded);
+	}
+
+	function reliefFromHash(encoded: string | null | undefined): ColorRelief {
+		return encoded ? parseColorRelief(decodeConfig(encoded)) : false;
 	}
 
 	function sourcesFromHash(encoded: string | null | undefined): ChosenSources | undefined {
@@ -787,6 +806,7 @@
 			layerZooms = zoomsFromHash(layers.zooms);
 			layerRoles = rolesFromHash(layers.roles);
 			overChart = chartFromHash(layers.chart);
+			colorRelief = reliefFromHash(layers.relief);
 			if (panelOpen !== undefined) paneOpen = panelOpen;
 			const hashSources = sourcesFromHash(sources);
 			if (hashSources) applySources(hashSources);
@@ -811,6 +831,10 @@
 	$effect(() => {
 		const over = $state.snapshot(overChart) as string[];
 		hashManager?.setLayerParam('chart', overChartChanges(over) > 0 ? encodeConfig({ over }) : null);
+	});
+	$effect(() => {
+		const relief = $state.snapshot(colorRelief) as ColorRelief;
+		hashManager?.setLayerParam('relief', relief ? encodeConfig(relief) : null);
 	});
 	// And so are the tile sources, unless they are the page's own.
 	$effect(() => {
@@ -976,6 +1000,7 @@
 				rolesShown={sourceConfig.online !== undefined && roleState !== undefined}
 				{roleState}
 				bind:overChart
+				bind:colorRelief
 			/>
 		{/if}
 		<!-- The project itself, which is neither the map nor the style: out of the action rows. -->

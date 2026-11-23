@@ -5,6 +5,7 @@
 	import type { LayerRoles } from '../style/roles';
 	import type { RoleStatus } from '../style/role_status';
 	import { DEFAULT_OVER_CHART, overChartChanges } from '../style/chart_anchor';
+	import type { ColorRelief } from '../style/color_relief';
 	import type { StyleSpecification } from 'maplibre-gl';
 	import SidebarSection from './SidebarSection.svelte';
 	import ColorOptions from './sections/ColorOptions.svelte';
@@ -35,6 +36,7 @@
 		rolesShown = false,
 		roleState,
 		overChart = $bindable(),
+		colorRelief = $bindable(false),
 	}: {
 		options: VectorState;
 		defaults: VectorState;
@@ -65,6 +67,8 @@
 		roleState?: RoleStatus;
 		/** The layer groups drawn over the chart. */
 		overChart: string[];
+		/** Colour by height, drawn from the elevation tiles. */
+		colorRelief?: ColorRelief;
 	} = $props();
 
 	const changes = (...paths: string[]) => configChangeCount(config, paths);
@@ -92,6 +96,7 @@
 	function resetElevation() {
 		options.features.terrain = defaults.features.terrain;
 		options.features.hillshade = defaults.features.hillshade;
+		colorRelief = false;
 	}
 	function resetMap() {
 		options.projection = defaults.projection;
@@ -189,10 +194,11 @@
 		? '3D elevation features rendered from an elevation source.'
 		: 'Unavailable — this server provides no elevation tiles.'}
 	onReset={hasElevation ? resetElevation : undefined}
-	changes={changes('features.terrain', 'features.hillshade')}
+	changes={changes('features.terrain', 'features.hillshade') + (colorRelief ? 1 : 0)}
 >
 	<ElevationOptions
 		bind:features={options.features}
+		bind:colorRelief
 		lit={options.light !== false}
 		disabled={!hasElevation}
 	/>

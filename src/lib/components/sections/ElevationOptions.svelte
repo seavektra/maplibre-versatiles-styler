@@ -4,13 +4,22 @@
 	import InputCheckbox from '../inputs/InputCheckbox.svelte';
 	import InputColor from '../inputs/InputColor.svelte';
 	import InputNumber from '../inputs/InputNumber.svelte';
+	import InputSegmented from '../inputs/InputSegmented.svelte';
+	import {
+		DEFAULT_COLOR_RELIEF,
+		type ColorRelief,
+		type ColorReliefRamp,
+	} from '../../style/color_relief';
 
 	let {
 		features = $bindable(),
+		colorRelief = $bindable(),
 		lit,
 		disabled = false,
 	}: {
 		features: { terrain: ResolvedTerrain; hillshade: ResolvedHillshade };
+		/** Colour by height, which the styler adds to the style; there is none in a satellite style. */
+		colorRelief?: ColorRelief;
 		/** Whether the map has a light, which shades the hillshade without its accent color. */
 		lit: boolean;
 		disabled?: boolean;
@@ -92,4 +101,42 @@
 			defaultValue={hillshadeDefaults.accentColor}
 		/>
 	</div>
+{/if}
+{#if colorRelief !== undefined}
+	<InputCheckbox
+		label="Colour by height"
+		hint="Tint the land by its height, from green lowlands to brown and white peaks, under the hillshade. The sea stays clear: the elevation tiles put it at 0 m."
+		{disabled}
+		bind:value={
+			() => colorRelief !== false, (v) => (colorRelief = v ? { ...DEFAULT_COLOR_RELIEF } : false)
+		}
+		defaultValue={false}
+	/>
+	{#if colorRelief}
+		<div class="nested">
+			<InputSegmented
+				label="Colours"
+				{disabled}
+				bind:value={
+					() => (colorRelief ? colorRelief.ramp : undefined),
+					(v) => colorRelief && (colorRelief.ramp = v as ColorReliefRamp)
+				}
+				defaultValue={DEFAULT_COLOR_RELIEF.ramp}
+				options={[
+					{ value: 'atlas', label: 'Atlas' },
+					{ value: 'muted', label: 'Muted' },
+				]}
+			/>
+			<InputNumber
+				label="Opacity"
+				{disabled}
+				bind:value={colorRelief.opacity}
+				defaultValue={DEFAULT_COLOR_RELIEF.opacity}
+				min={0}
+				max={1}
+				scale={100}
+				unit="%"
+			/>
+		</div>
+	{/if}
 {/if}
