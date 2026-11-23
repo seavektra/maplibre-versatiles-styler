@@ -4,13 +4,27 @@
 	import InputCheckbox from '../inputs/InputCheckbox.svelte';
 	import InputColor from '../inputs/InputColor.svelte';
 	import InputNumber from '../inputs/InputNumber.svelte';
+	import InputSegmented from '../inputs/InputSegmented.svelte';
+	import ZoomRampOptions from './ZoomRampOptions.svelte';
+	import type { ZoomRamp } from '../../style/zoom_ramp';
+	import {
+		DEFAULT_COLOR_RELIEF,
+		type ColorRelief,
+		type ColorReliefRamp,
+	} from '../../style/color_relief';
 
 	let {
 		features = $bindable(),
+		colorRelief = $bindable(),
+		hillshadeZooms = $bindable(),
 		lit,
 		disabled = false,
 	}: {
 		features: { terrain: ResolvedTerrain; hillshade: ResolvedHillshade };
+		/** Colour by height, which the styler adds to the style; there is none in a satellite style. */
+		colorRelief?: ColorRelief;
+		/** The hillshade's zooms and intensity at max zoom; none in a satellite style. */
+		hillshadeZooms?: ZoomRamp;
 		/** Whether the map has a light, which shades the hillshade without its accent color. */
 		lit: boolean;
 		disabled?: boolean;
@@ -59,17 +73,21 @@
 />
 {#if features.hillshade}
 	<div class="nested">
-		<InputNumber
-			label="Intensity"
-			hint="How strongly slopes are shaded."
-			{disabled}
-			bind:value={features.hillshade.exaggeration}
-			defaultValue={hillshadeDefaults.exaggeration}
-			min={0}
-			max={1}
-			scale={100}
-			unit="%"
-		/>
+		{#if hillshadeZooms}
+			<ZoomRampOptions
+				bind:ramp={hillshadeZooms}
+				what="The hillshade"
+				valueLabel="Intensity"
+				start={features.hillshade.exaggeration}
+				{disabled}
+			>
+				{#snippet startField()}
+					{@render intensity('Intensity at min zoom')}
+				{/snippet}
+			</ZoomRampOptions>
+		{:else}
+			{@render intensity('Intensity')}
+		{/if}
 		<InputColor
 			label="Shadow Color"
 			{disabled}
@@ -93,3 +111,69 @@
 		/>
 	</div>
 {/if}
+{#if colorRelief !== undefined}
+	<InputCheckbox
+		label="Colour by height"
+		hint="Colour bare land by its height, from green lowlands to brown and white peaks. Land use such as forests, parks and towns is drawn over it in its own colours, and the sea over it cuts it back to the coastline. Turn the Land layers off to see the height colours alone."
+		{disabled}
+		bind:value={
+			() => colorRelief !== false, (v) => (colorRelief = v ? { ...DEFAULT_COLOR_RELIEF } : false)
+		}
+		defaultValue={false}
+	/>
+	{#if colorRelief}
+		<div class="nested">
+			<InputSegmented
+				label="Colours"
+				{disabled}
+				bind:value={
+					() => (colorRelief ? colorRelief.ramp : undefined),
+					(v) => colorRelief && (colorRelief.ramp = v as ColorReliefRamp)
+				}
+				defaultValue={DEFAULT_COLOR_RELIEF.ramp}
+				options={[
+					{ value: 'atlas', label: 'Atlas' },
+					{ value: 'muted', label: 'Muted' },
+				]}
+			/>
+			<ZoomRampOptions
+				bind:ramp={colorRelief}
+				what="The colour by height"
+				valueLabel="Opacity"
+				start={colorRelief.opacity}
+				{disabled}
+			>
+				{#snippet startField()}
+					{#if colorRelief}
+						<InputNumber
+							label="Opacity at min zoom"
+							{disabled}
+							bind:value={colorRelief.opacity}
+							defaultValue={DEFAULT_COLOR_RELIEF.opacity}
+							min={0}
+							max={1}
+							scale={100}
+							unit="%"
+						/>
+					{/if}
+				{/snippet}
+			</ZoomRampOptions>
+		</div>
+	{/if}
+{/if}
+
+{#snippet intensity(label: string)}
+	{#if features.hillshade}
+		<InputNumber
+			{label}
+			hint="How strongly slopes are shaded."
+			{disabled}
+			bind:value={features.hillshade.exaggeration}
+			defaultValue={hillshadeDefaults.exaggeration}
+			min={0}
+			max={1}
+			scale={100}
+			unit="%"
+		/>
+	{/if}
+{/snippet}
