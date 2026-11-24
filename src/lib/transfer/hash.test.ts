@@ -1,6 +1,18 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { Map as MLGLMap } from 'maplibre-gl';
-import { decodeConfig, encodeConfig, HashManager, type HashStorage } from './hash';
+import {
+	basemapHash,
+	basemapState,
+	basemapStorage,
+	decodeConfig,
+	encodeConfig,
+	HashManager,
+	memoryLocation,
+	parseBasemapState,
+	sameBasemapState,
+	type BasemapState,
+	type HashStorage,
+} from './hash';
 
 function createMockMap(overrides: Partial<Record<string, any>> = {}) {
 	return {
@@ -739,6 +751,116 @@ describe('HashManager', () => {
 			window.dispatchEvent(new HashChangeEvent('hashchange'));
 			expect(onChange).toHaveBeenLastCalledWith(null);
 			expect(onChange).toHaveBeenCalledTimes(2);
+		});
+	});
+});
+
+describe('basemap state', () => {
+	const zooms = { 'boundaries.maritime': { min: 3 } };
+
+	it('decodes the encoded parameters of a hash, without the view', () => {
+		const hash = `#map=5/50/10&panel=open&style=gray&zooms=${encodeConfig(zooms)}`;
+		expect(basemapState(hash)).toEqual({ version: 1, params: { style: 'gray', zooms } });
+	});
+
+	it('writes a state back as the same hash parameters', () => {
+		const state: BasemapState = { version: 1, params: { style: 'gray', zooms } };
+		expect(basemapHash(state)).toBe(`#style=gray&zooms=${encodeConfig(zooms)}`);
+		expect(basemapState(basemapHash(state))).toEqual(state);
+		expect(basemapHash({ version: 1, params: {} })).toBe('');
+	});
+
+	it('reads only version 1, and drops the view and anything that is no parameter', () => {
+		expect(parseBasemapState({ version: 1, params: { style: 'gray', zooms } })).toEqual({
+			version: 1,
+			params: { style: 'gray', zooms },
+		});
+		for (const value of [null, 'x', { version: 2, params: {} }, { version: 1, params: [] }]) {
+			expect(parseBasemapState(value)).toEqual({ version: 1, params: {} });
+		}
+		expect(
+			parseBasemapState({ version: 1, params: { map: '1/2/3', 'a=b': 'x', n: 3, style: 'gray' } })
+		).toEqual({ version: 1, params: { style: 'gray' } });
+	});
+
+	it('round-trips the paint of new layers and the settings of new groups', () => {
+		const state: BasemapState = {
+			version: 1,
+			params: {
+				style: 'gray',
+				paint: { 'maritime-eez': { color: '#ff0000', dash: [2, 1] } },
+				groups: { 'boundaries.maritime': false, 'sea.eez': 0.5 },
+				sources: { from: 9 },
+			},
+		};
+		expect(basemapState(basemapHash(state))).toEqual(state);
+	});
+
+	it('rejects states that are not version 1 with parameters', () => {
+		for (const value of [
+			undefined,
+			[],
+			{ params: { style: 'gray' } },
+			{ version: '1', params: { style: 'gray' } },
+			{ version: 1, params: 'style=gray' },
+			{ version: 1, params: null },
+		]) {
+			expect(parseBasemapState(value)).toEqual({ version: 1, params: {} });
+		}
+		expect(
+			parseBasemapState(JSON.parse('{"version":1,"params":{"__proto__":{"a":1},"style":"gray"}}'))
+		).toEqual({ version: 1, params: { style: 'gray' } });
+	});
+
+	it('compares states whatever the order of their keys', () => {
+		const a: BasemapState = {
+			version: 1,
+			params: { style: 'gray', zooms: { a: { min: 1, max: 2 } } },
+		};
+		const b: BasemapState = {
+			version: 1,
+			params: { zooms: { a: { max: 2, min: 1 } }, style: 'gray' },
+		};
+		expect(sameBasemapState(a, b)).toBe(true);
+		expect(sameBasemapState(a, { version: 1, params: { style: 'gray' } })).toBe(false);
+	});
+
+	describe('a HashManager on a basemap', () => {
+		beforeEach(() => {
+			vi.useFakeTimers();
+			window.location.hash = '';
+		});
+		afterEach(() => {
+			vi.useRealTimers();
+			vi.restoreAllMocks();
+		});
+
+		it('starts from the basemap state, reports what it writes, and leaves the page URL alone', () => {
+			const replaceState = vi.spyOn(window.history, 'replaceState');
+			const listen = vi.spyOn(window, 'addEventListener');
+			const saved: BasemapState[] = [];
+			const initial: BasemapState = { version: 1, params: { style: 'gray', zooms } };
+			const hm = new HashManager(
+				createMockMap(),
+				vi.fn(),
+				undefined,
+				undefined,
+				{ onChange: vi.fn() },
+				basemapStorage(initial, (state) => saved.push(state)),
+				memoryLocation()
+			);
+			const loaded = hm.initialize();
+			expect(loaded.styleKey).toBe('gray');
+			expect(loaded.layers.zooms).toBe(encodeConfig(zooms));
+
+			hm.setLayerParam('zooms', null);
+			// A save asks for what is pending at once, not after the throttle.
+			hm.flush();
+			expect(saved[saved.length - 1]).toEqual({ version: 1, params: { style: 'gray' } });
+			expect(replaceState).not.toHaveBeenCalled();
+			expect(listen).not.toHaveBeenCalledWith('hashchange', expect.anything());
+			expect(window.location.hash).toBe('');
+			hm.destroy();
 		});
 	});
 });

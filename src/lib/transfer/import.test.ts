@@ -107,6 +107,16 @@ describe('parseImport: a styler link with tile sources', () => {
 });
 
 describe('parseImport: a styler link with layer group settings', () => {
+	it('reads the paint of new style layers and the settings of new groups', async () => {
+		const paint = { 'maritime-eez': { color: '#ff0000', width: 2 } };
+		const groups = { 'boundaries.maritime': false };
+		const result = await imported(
+			`#style=toner&paint=${encodeConfig(paint)}&groups=${encodeConfig(groups)}`
+		);
+		expect(result.layerPaint).toEqual(paint);
+		expect(result.newGroups).toEqual(groups);
+	});
+
 	it('reads the source roles and the over-chart groups the link names', async () => {
 		const roles = { 'roads.motorways': 'switch', buildings: 'auto' };
 		const link = `https://example.org/#style=toner&roles=${encodeConfig(roles)}&chart=${encodeConfig({ over: [] })}`;
@@ -212,6 +222,22 @@ describe('parseImport: a style.json this styler wrote', () => {
 			provider: 'openfreemap',
 			config: { vector: sources.vector, assets: sources.assets },
 		});
+	});
+
+	it('reads the paint of new style layers and the new groups an exported style records', async () => {
+		const options = { theme: 'gray' as const };
+		const paint = { 'maritime-eez': { color: '#ff0000', opacity: 0.5 } };
+		const groups = { 'boundaries.maritime': 0.5 };
+		const style = {
+			...osm(options),
+			metadata: styleMetadata('osm', options, {
+				'seavektra:layerPaint': paint,
+				'seavektra:newGroups': groups,
+			}),
+		};
+		const result = await imported(JSON.stringify(style));
+		expect(result.layerPaint).toEqual(paint);
+		expect(result.newGroups).toEqual(groups);
 	});
 
 	it('reads the zoom ranges an exported style records', async () => {

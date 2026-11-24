@@ -20,6 +20,8 @@
 	import InputCheckbox from '../inputs/InputCheckbox.svelte';
 	import InputNumber from '../inputs/InputNumber.svelte';
 	import { roleSummary, type RoleStatus } from '../../style/role_status';
+	import { fileName } from '../../style/basemap';
+	import type { BasemapFile } from '../../types';
 
 	let {
 		provider,
@@ -31,6 +33,7 @@
 		previewOffline = $bindable(false),
 		pmtiles,
 		archives = [],
+		fixed,
 		server,
 		onprovider,
 		onconfig,
@@ -51,6 +54,11 @@
 		pmtiles: boolean;
 		/** The PMTiles archives the page offers, by name and address. */
 		archives?: { name: string; url: string }[];
+		/**
+		 * The files of a basemap the styler is bound to: shown, by their file name, instead of the pickers.
+		 * The online tiles above stay a choice.
+		 */
+		fixed?: { tileset: BasemapFile; elevation?: BasemapFile };
 		/** The sources of the VersaTiles server at an origin. */
 		server: (origin: string) => SourceConfig;
 		onprovider: (provider: Provider) => void;
@@ -173,6 +181,14 @@
 	</div>
 {/snippet}
 
+<!-- A file of the basemap the styler is bound to: its name, the full one on hover. -->
+{#snippet fixedFile(label: string, file: BasemapFile)}
+	<div class="entry source-found">
+		<span class="label">{label}</span>
+		<span class="source-status" title={file.name}>{fileName(file.name)}</span>
+	</div>
+{/snippet}
+
 <!-- A source that is not typed: what it is, read from what loading it gave. -->
 {#snippet found(name: SourceName, label: string, missing: string)}
 	{@const state = status(name)}
@@ -214,28 +230,32 @@
 		{@render found('landcover', 'Land cover', 'Not on this server')}
 	{/if}
 {:else if provider === 'archive'}
-	<InputSelect
-		label="File"
-		bind:value={
-			() => config.vector ?? '',
-			(url) =>
-				onconfig(
-					url
-						? {
-								...archiveSources(
-									url,
-									config.assets,
-									url === config.elevation ? undefined : config.elevation
-								),
-								...(config.online ? { online: config.online } : {}),
-							}
-						: { vector: '', assets: config.assets }
-				)
-		}
-		defaultValue={undefined}
-		modified={false}
-		options={archives.map((archive) => ({ value: pmtilesUrl(archive.url), label: archive.name }))}
-	/>
+	{#if fixed}
+		{@render fixedFile('File', fixed.tileset)}
+	{:else}
+		<InputSelect
+			label="File"
+			bind:value={
+				() => config.vector ?? '',
+				(url) =>
+					onconfig(
+						url
+							? {
+									...archiveSources(
+										url,
+										config.assets,
+										url === config.elevation ? undefined : config.elevation
+									),
+									...(config.online ? { online: config.online } : {}),
+								}
+							: { vector: '', assets: config.assets }
+					)
+			}
+			defaultValue={undefined}
+			modified={false}
+			options={archives.map((archive) => ({ value: pmtilesUrl(archive.url), label: archive.name }))}
+		/>
+	{/if}
 	<div class="entry source-found">
 		<span class="label">Offline tiles</span>
 		<span class="source-status" class:error={offlineStatus.state === 'error'}>
@@ -284,19 +304,23 @@
 			defaultValue={false}
 		/>
 	{/if}
-	<InputSelect
-		label="Elevation"
-		hint="Another of these files, with elevation tiles in Terrarium encoding. It makes Terrain & hillshade available."
-		bind:value={() => config.elevation ?? '', (url) => onconfig(withUrl('elevation', url ?? ''))}
-		defaultValue={undefined}
-		modified={false}
-		options={[
-			{ value: '', label: 'None' },
-			...archives
-				.map((archive) => ({ value: pmtilesUrl(archive.url), label: archive.name }))
-				.filter((option) => option.value !== config.vector),
-		]}
-	/>
+	{#if fixed}
+		{#if fixed.elevation}{@render fixedFile('Elevation', fixed.elevation)}{/if}
+	{:else}
+		<InputSelect
+			label="Elevation"
+			hint="Another of these files, with elevation tiles in Terrarium encoding. It makes Terrain & hillshade available."
+			bind:value={() => config.elevation ?? '', (url) => onconfig(withUrl('elevation', url ?? ''))}
+			defaultValue={undefined}
+			modified={false}
+			options={[
+				{ value: '', label: 'None' },
+				...archives
+					.map((archive) => ({ value: pmtilesUrl(archive.url), label: archive.name }))
+					.filter((option) => option.value !== config.vector),
+			]}
+		/>
+	{/if}
 	{#if config.elevation !== undefined}
 		{@render found('elevation', 'Elevation tiles', '')}
 	{/if}

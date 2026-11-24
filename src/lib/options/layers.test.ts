@@ -62,6 +62,16 @@ describe('layerNodes', () => {
 		expect(find(nodes, 'pois').label).toBe('POIs');
 	});
 
+	it('names groups by the labels given for their path', () => {
+		const nodes = layerNodes(osm.layerGroups, defaults(), {
+			'boundaries.country': 'Land borders',
+			pois: 'Points',
+		});
+		expect(find(nodes, 'boundaries.country').label).toBe('Land borders');
+		expect(find(nodes, 'pois').label).toBe('Points');
+		expect(find(nodes, 'boundaries.state').label).toBe('States');
+	});
+
 	it('marks the six line groups, and no other', () => {
 		const nodes = layerNodes(osm.layerGroups, defaults());
 		const lines = (list: LayerNode[]): string[] =>

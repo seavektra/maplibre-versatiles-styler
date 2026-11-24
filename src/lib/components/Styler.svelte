@@ -22,7 +22,6 @@
 		overlaySupported,
 		overlayDefaults,
 		probeSatelliteState,
-		probeVectorState,
 		styleCode,
 		styleForExport,
 		type StyleKey,
@@ -55,20 +54,34 @@
 	import { SvelteSet } from 'svelte/reactivity';
 	import { highlightGeometry, setStyleLayerShown } from '../style/inspect_overlay';
 	import {
+		basemapStorage,
 		decodeConfig,
 		encodeConfig,
 		HashManager,
 		localHashStorage,
+		memoryLocation,
+		parseBasemapState,
+		sameBasemapState,
+		type BasemapState,
 		type LayerParam,
 	} from '../transfer/hash';
 	import {
-		applyLayerZooms,
-		groupZoomDefaults,
-		METADATA_ZOOMS_KEY,
-		parseLayerZooms,
-		tileLayerZooms,
-		type LayerZooms,
-	} from '../style/zooms';
+		allGroupsShown,
+		basemapWarnings,
+		boundSourcesParam,
+		keptLayerPaint,
+		libraryConfigState,
+		parseBoundSourcesParam,
+		fileName,
+		newGroupValues,
+		prepareBasemapMapping,
+		withNewGroups,
+		withNewGroupValues,
+		type LayerPaint,
+		type NewGroupValue,
+	} from '../style/basemap';
+	import { parseLayerMapping } from '../style/layer_mapping';
+	import { groupZoomDefaults, tileLayerZooms, type LayerZooms } from '../style/zooms';
 	import { provideFontPickerState } from './state/font_picker.svelte';
 	import { provideColorPickerState } from './state/color_picker.svelte';
 	import { labelTexts } from '../browser/map_labels';
@@ -79,33 +92,26 @@
 	import ThemeSelect from './ThemeSelect.svelte';
 	import ExportDialog from './ExportDialog.svelte';
 	import SourceOptions from './sections/SourceOptions.svelte';
-	import { ONLINE_STATE, splitByZoom } from '../style/online';
+	import { ONLINE_STATE } from '../style/online';
+	import { type LayerRoles } from '../style/roles';
+	import type { RoleStatus } from '../style/role_status';
+	import { DEFAULT_OVER_CHART, overChartChanges } from '../style/chart_anchor';
+	import { type ColorRelief } from '../style/color_relief';
+	import { isEmptyRamp, type ZoomRamp } from '../style/zoom_ramp';
 	import {
-		METADATA_ROLES_KEY,
-		parseLayerRoles,
-		rolesByLayer,
-		type LayerRoles,
-	} from '../style/roles';
-	import { roleStatus, type RoleStatus } from '../style/role_status';
+		buildStylerVectorStyle,
+		vectorExportStyle,
+		type StylerSettings,
+	} from '../style/pipeline';
 	import {
-		DEFAULT_OVER_CHART,
-		overChartChanges,
-		parseOverChart,
-		withChartAnchor,
-	} from '../style/chart_anchor';
-	import {
-		METADATA_RELIEF_KEY,
-		parseColorRelief,
-		withColorRelief,
-		type ColorRelief,
-	} from '../style/color_relief';
-	import {
-		METADATA_HILLSHADE_KEY,
-		isEmptyRamp,
-		parseZoomRamp,
-		withHillshadeRamp,
-		type ZoomRamp,
-	} from '../style/zoom_ramp';
+		chartFromParam,
+		newGroupsFromParam,
+		paintFromParam,
+		reliefFromParam,
+		rolesFromParam,
+		shadeFromParam,
+		zoomsFromParam,
+	} from '../transfer/layer_params';
 	import InspectPanel from './InspectPanel.svelte';
 	import { inspectClick, type InspectableMap, type InspectClick } from '../style/inspect_tiles';
 	import ImportDialog from './ImportDialog.svelte';
@@ -134,13 +140,35 @@
 		return versatilesSources(origin, { ...listed[origin], ...Object.fromEntries(named) });
 	}
 
+	/** The basemap the styler is bound to: its tiles are the only ones, and it keeps the state. */
+	const basemap = untrack(() => config.basemap);
+	/** The basemap's layer mapping as parsed: which keys of the state are its new groups' from the start. */
+	const parsedMapping = basemap ? parseLayerMapping(basemap.mapping).mapping : undefined;
+	if (basemap && !untrack(() => config.addProtocol)) {
+		console.warn('versatiles-styler: a basemap needs `addProtocol` to read its PMTiles archives.');
+	}
+
+	/**
+	 * The sources of a bound styler: the basemap's tiles, whatever `next` names, with the settings of
+	 * `next` that are the styler's own — the online tiles above, the schema.
+	 */
+	function boundSources(next?: SourceConfig): SourceConfig {
+		// (The kept state names no addresses: see `boundSourcesParam`.)
+		const { tileset, elevation } = basemap!;
+		return {
+			...archiveSources(tileset.url, ownAssets(), elevation?.url),
+			...(next?.schema ? { schema: next.schema } : {}),
+			...(next?.online ? { online: next.online } : {}),
+		};
+	}
+
 	// Where the tiles and the assets come from: a VersaTiles server, which provides all of them.
 	let sourceConfig = $state.raw<SourceConfig>(
-		untrack(() => ownServer(config.origin ?? window.location.origin))
+		untrack(() => (basemap ? boundSources() : ownServer(config.origin ?? window.location.origin)))
 	);
 	// Which provider's sources these are. It is a choice, not a reading of the config: a custom set of
 	// sources may be the same as a provider's.
-	let provider = $state<Provider>('versatiles');
+	let provider = $state<Provider>(untrack(() => (basemap ? 'archive' : 'versatiles')));
 	/** The sources each provider was left with, to come back to. */
 	const leftSources: Partial<Record<Provider, SourceConfig>> = {};
 
@@ -148,27 +176,43 @@
 	const pmtiles = untrack(() => config.addProtocol);
 	if (pmtiles) registerPMTiles(pmtiles);
 
-	/** The PMTiles archives the page offers, which only a map that reads PMTiles can draw. */
-	const archives = untrack(() => (pmtiles ? (config.archives ?? []) : []));
+	/**
+	 * The PMTiles archives the page offers, which only a map that reads PMTiles can draw. A basemap's
+	 * are its tileset and its elevation, which are fixed rather than offered.
+	 */
+	const archives = untrack(() =>
+		basemap
+			? [basemap.tileset, ...(basemap.elevation ? [basemap.elevation] : [])]
+			: pmtiles
+				? (config.archives ?? [])
+				: []
+	);
 
-	const PROVIDERS: { value: Provider; label: string }[] = untrack(() => [
-		{ value: 'versatiles', label: 'VersaTiles' },
-		...(archives.length > 0 ? [{ value: 'archive' as const, label: 'PMTiles file' }] : []),
-		...(config.externalSources
-			? [
-					{ value: 'openfreemap' as const, label: 'OpenFreeMap' },
-					...(pmtiles ? [{ value: 'protomaps' as const, label: 'Protomaps' }] : []),
-					{ value: 'custom' as const, label: 'Custom' },
+	const PROVIDERS: { value: Provider; label: string }[] = untrack(() =>
+		basemap
+			? [{ value: 'archive' as const, label: 'PMTiles file' }]
+			: [
+					{ value: 'versatiles', label: 'VersaTiles' },
+					...(archives.length > 0 ? [{ value: 'archive' as const, label: 'PMTiles file' }] : []),
+					...(config.externalSources
+						? [
+								{ value: 'openfreemap' as const, label: 'OpenFreeMap' },
+								...(pmtiles ? [{ value: 'protomaps' as const, label: 'Protomaps' }] : []),
+								{ value: 'custom' as const, label: 'Custom' },
+							]
+						: []),
 				]
-			: []),
-	]);
+	);
 	/** Whether the sidebar offers other sources than the page's own server, and links keep them. */
 	const otherSources = PROVIDERS.length > 1;
 
-	/** The name of the archive the sources draw, if they are one the page offers. */
+	/** The name of the archive the sources draw, if they are one the page offers: its file name. */
 	function archiveName(source: SourceConfig): string | undefined {
-		return archives.find((archive) => archiveSources(archive.url, '').vector === source.vector)
-			?.name;
+		const name = archives.find(
+			(archive) => archiveSources(archive.url, '').vector === source.vector
+		)?.name;
+		// A basemap's file may be named by its full path.
+		return name !== undefined && basemap ? fileName(name) : name;
 	}
 
 	let sourcesLabel = $derived.by(() => {
@@ -207,6 +251,7 @@
 
 	/** Sources chosen in the sidebar. Picking another archive moves the map to it. */
 	function chooseSources(next: SourceConfig) {
+		if (basemap) return setSourceConfig(boundSources(next));
 		if (provider === 'archive' && next.vector !== sourceConfig.vector) fitArchive = next.vector;
 		setSourceConfig(next);
 	}
@@ -290,8 +335,8 @@
 	let hasElevation = $derived(Boolean(elevationTileJSON));
 	let languages = $derived(languageOptions(vectorTileJSON ? osm.languages(vectorTileJSON) : []));
 
-	/** The layers and the label topics of the vector style, which are those of the schema. */
-	let vectorGroups = $derived(inspectSources(DEFAULT_STYLE_KEY, schema));
+	/** The layers and the label topics of the theme, which are those of the schema. */
+	let themeGroups = $derived(inspectSources(DEFAULT_STYLE_KEY, schema));
 
 	// ── Options ──────────────────────────────────────────────────────────────────
 
@@ -299,9 +344,11 @@
 	let isSatellite = $derived(currentStyleKey === 'satellite');
 	let vectorState = $state<VectorState>(vectorDefaults('colorful'));
 	let satelliteState = $state<SatelliteState>(satelliteDefaults());
-	let currentVectorDefaults = $derived(
-		isSatellite ? null : vectorDefaults(currentStyleKey as Palette)
-	);
+	let currentVectorDefaults = $derived.by(() => {
+		if (isSatellite) return null;
+		const defaults = vectorDefaults(currentStyleKey as Palette);
+		return basemapMapping ? withNewGroups(defaults, basemapMapping) : defaults;
+	});
 	/** The zoom ranges set for the vector style's layer groups, by group path. */
 	let layerZooms = $state<LayerZooms>({});
 	/** The source roles set for the vector style's layer groups, by group path: none is Auto. */
@@ -321,14 +368,72 @@
 	let defaultVectorStyle = $derived.by(() => {
 		const vector = vectorTileJSON;
 		if (!vector) return undefined;
+		// Every group shown, so that it has every layer, in the theme's draw order.
+		const defaults = vectorDefaults(DEFAULT_STYLE_KEY as Palette);
 		return untrack(() =>
 			buildVectorStyle(
 				DEFAULT_STYLE_KEY as Palette,
-				vectorDefaults(DEFAULT_STYLE_KEY as Palette),
+				{ ...defaults, layers: allGroupsShown(defaults.layers) },
 				sourceConfig.assets,
 				{ schema, vector }
 			)
 		);
+	});
+	/**
+	 * The basemap's layer mapping, applied to the theme's groups once the tiles are in: the theme's
+	 * layers, in draw order, are what it moves and places new layers by.
+	 */
+	let basemapMapping = $derived.by(() => {
+		// While the tiles load again (another online setting), the last mapping stays, so that the
+		// panel and the groups do not flicker.
+		if (!basemap || !defaultVectorStyle) return lastMapping;
+		const themeLayers = defaultVectorStyle.layers.map((layer) => layer.id);
+		return (lastMapping = prepareBasemapMapping(
+			basemap.mapping,
+			themeGroups.layerGroups,
+			vectorDefaults(DEFAULT_STYLE_KEY as Palette).layers,
+			themeLayers
+		));
+	});
+	let lastMapping: ReturnType<typeof prepareBasemapMapping> | undefined;
+	/** The layers and the label topics of the vector style: the theme's, with the mapping applied. */
+	let vectorGroups = $derived(
+		basemapMapping ? { ...themeGroups, layerGroups: basemapMapping.groups } : themeGroups
+	);
+	/** The paint of the mapping's new style layers, by layer id. */
+	let layerPaint = $state<LayerPaint>({});
+	/**
+	 * The settings of new groups a state was loaded with, until the mapping is there to take them: the
+	 * mapping needs the tiles.
+	 */
+	let pendingNewGroups: Record<string, NewGroupValue> = {};
+
+	/** The state with the mapping's new groups in it, which the Layers panel lists. */
+	function withMapping(state: VectorState): VectorState {
+		return basemapMapping ? withNewGroups(state, basemapMapping) : state;
+	}
+
+	/**
+	 * The state as the library's options record it: without the mapping's new groups, also before the
+	 * mapping is applied, and with merged groups at their default (see `libraryConfigState`).
+	 */
+	function libraryState(state: VectorState): VectorState {
+		if (!parsedMapping) return state;
+		const themeDefaults = vectorDefaults(
+			(currentStyleKey === 'satellite' ? DEFAULT_STYLE_KEY : currentStyleKey) as Palette
+		);
+		return libraryConfigState(state, parsedMapping, basemapMapping?.applied, themeDefaults);
+	}
+
+	// Once the mapping is there, the state gets its new groups, with the settings it was loaded with.
+	$effect(() => {
+		const mapping = basemapMapping;
+		if (!mapping) return;
+		untrack(() => {
+			const state = withNewGroups($state.snapshot(vectorState) as VectorState, mapping);
+			vectorState = withNewGroupValues(state, mapping.applied, pendingNewGroups);
+			pendingNewGroups = {};
+		});
 	});
 	let zoomDefaults = $derived(
 		defaultVectorStyle ? groupZoomDefaults(defaultVectorStyle, vectorGroups.layerGroups) : {}
@@ -346,7 +451,7 @@
 		if (key === 'satellite') {
 			satelliteState = satelliteStateFromConfig(hashConfig);
 		} else {
-			vectorState = vectorStateFromConfig(key, hashConfig);
+			vectorState = withMapping(vectorStateFromConfig(key, hashConfig));
 		}
 	}
 
@@ -396,38 +501,35 @@
 		// Online tiles above the archive wait for their TileJSON; ones that failed are left out.
 		const online = sourceConfig.online;
 		if (online && onlineTileJSON === undefined) return undefined;
-		const groups = vectorGroups.layerGroups;
-		const zoomed = applyLayerZooms(
-			buildVectorStyle(
-				styleKey,
-				probeColors ? probeVectorState(state, probeColors) : state,
-				sourceConfig.assets,
-				stateSources
-			),
-			$state.snapshot(layerZooms) as LayerZooms,
-			groups
-		);
-		let style = zoomed;
-		let roles: RoleStatus | undefined;
-		if (online && onlineTileJSON) {
-			const set = $state.snapshot(layerRoles) as LayerRoles;
-			style = splitByZoom(zoomed, onlineTileJSON, online.from, rolesByLayer(set, groups));
-			// The colour probes of the inspector ask for none of it.
-			if (!probeColors)
-				roles = roleStatus(
-					zoomed,
-					style,
-					set,
-					groups,
-					online.from,
-					stateSources.vector.maxzoom ?? online.from - 1
-				);
-		}
-		// The anchor is there with or without online tiles, so that every export marks where the chart goes.
-		style = withChartAnchor(style, $state.snapshot(overChart) as string[], groups);
-		style = withColorRelief(style, relief, stateSources.elevation);
-		style = withHillshadeRamp(style, $state.snapshot(hillshadeZooms) as ZoomRamp);
+		// A bound styler waits for its mapping, which waits for the tiles.
+		const mapping = basemapMapping;
+		if (basemap && !mapping) return undefined;
+		const { style, roles } = buildStylerVectorStyle({
+			styleKey,
+			state,
+			assets: sourceConfig.assets,
+			sources: stateSources,
+			groups: vectorGroups.layerGroups,
+			...(mapping ? { mapping } : {}),
+			...(online && onlineTileJSON
+				? { online: { tileJSON: onlineTileJSON, from: online.from } }
+				: {}),
+			settings: stylerSettings(),
+			...(probeColors ? { probeColors } : {}),
+		});
 		return { style, rendered: { styleKey, sources: sourceConfig, options: state }, roles };
+	}
+
+	/** The styler's own settings that go into the vector style, as they are now. */
+	function stylerSettings(): StylerSettings {
+		return {
+			layerZooms: $state.snapshot(layerZooms) as LayerZooms,
+			layerRoles: $state.snapshot(layerRoles) as LayerRoles,
+			overChart: $state.snapshot(overChart) as string[],
+			colorRelief: $state.snapshot(colorRelief) as ColorRelief,
+			hillshadeZooms: $state.snapshot(hillshadeZooms) as ZoomRamp,
+			layerPaint: $state.snapshot(layerPaint) as LayerPaint,
+		};
 	}
 
 	function styleSources(
@@ -452,9 +554,27 @@
 	let minimal = $derived(
 		minimalConfig(
 			currentStyleKey,
-			$state.snapshot(vectorState) as VectorState,
+			libraryState($state.snapshot(vectorState) as VectorState),
 			$state.snapshot(satelliteState) as SatelliteState
 		)
+	);
+	/** The settings of the mapping's new groups that are not the default, by path. */
+	let newGroups = $derived(
+		basemapMapping
+			? newGroupValues($state.snapshot(vectorState) as VectorState, basemapMapping.applied)
+			: {}
+	);
+	/** What the mapping warns of, for the tiles and the style on the map: one line atop Layers. */
+	let layerWarnings = $derived(
+		basemapMapping
+			? basemapWarnings(
+					basemapMapping,
+					styleLayers
+						? ({ version: 8, sources: {}, layers: styleLayers } as StyleSpecification)
+						: undefined,
+					vectorTileJSON
+				)
+			: []
 	);
 
 	// What the style on the map was built from, to decide how the next one is applied.
@@ -613,6 +733,8 @@
 				{
 					indexes,
 					current: styleLayers ?? [],
+					// TODO: a basemap mapping's new layers are not in the theme's style, so what the tiles
+					// hold for them shows as not drawn while they are hidden.
 					full: defaultVectorStyle?.layers ?? [],
 					tileZooms,
 				}
@@ -629,7 +751,9 @@
 
 	// ── Header actions ───────────────────────────────────────────────────────────
 
-	let totalChanges = $derived(configChangeCount(minimal, Object.keys(minimal)));
+	let totalChanges = $derived(
+		configChangeCount(minimal, Object.keys(minimal)) + Object.keys(newGroups).length
+	);
 	let exportOpen = $state(false);
 	let importOpen = $state(false);
 	/** A short message after an action, e.g. "Style code copied". */
@@ -652,7 +776,7 @@
 			satellite: $state.snapshot(satelliteState) as SatelliteState,
 		};
 		if (isSatellite) satelliteState = satelliteDefaults();
-		else vectorState = vectorDefaults(currentStyleKey as Palette);
+		else vectorState = withMapping(vectorDefaults(currentStyleKey as Palette));
 		clearTimeout(undoTimer);
 		undoTimer = setTimeout(() => (undoState = undefined), 15000);
 	}
@@ -681,33 +805,33 @@
 	let exportStyle = $derived.by(() => {
 		const current = currentStyle();
 		if (!current) return undefined;
-		const style = styleForExport(current.style, currentStyleKey, minimal, schema, {
-			provider,
-			config: sourceConfig,
+		const sources = { provider, config: sourceConfig };
+		if (isSatellite) {
+			return styleForExport(current.style, currentStyleKey, minimal, schema, sources);
+		}
+		return vectorExportStyle(current.style, {
+			styleKey: currentStyleKey as Palette,
+			minimal,
+			schema,
+			sources,
+			settings: stylerSettings(),
+			...(basemap && basemapMapping
+				? {
+						basemap: {
+							name: basemap.name,
+							mapping: basemap.mapping,
+							applied: basemapMapping.applied,
+							newGroups,
+						},
+					}
+				: {}),
 		});
-		// The ranges and roles are in the layers already, and the over-chart groups in the chart
-		// anchor's record; the records let Import restore the fields that set them.
-		const zooms = $state.snapshot(layerZooms) as LayerZooms;
-		const roles = $state.snapshot(layerRoles) as LayerRoles;
-		const relief = $state.snapshot(colorRelief) as ColorRelief;
-		const shade = $state.snapshot(hillshadeZooms) as ZoomRamp;
-		if (isSatellite) return style;
-		return {
-			...style,
-			metadata: {
-				...(style.metadata as object),
-				...(Object.keys(zooms).length > 0 ? { [METADATA_ZOOMS_KEY]: zooms } : {}),
-				...(Object.keys(roles).length > 0 ? { [METADATA_ROLES_KEY]: roles } : {}),
-				...(relief ? { [METADATA_RELIEF_KEY]: relief } : {}),
-				...(isEmptyRamp(shade) ? {} : { [METADATA_HILLSHADE_KEY]: shade }),
-			},
-		} as StyleSpecification;
 	});
 
 	function exportCode(target: 'npm' | 'browser') {
 		return styleCode(
 			currentStyleKey,
-			$state.snapshot(vectorState) as VectorState,
+			libraryState($state.snapshot(vectorState) as VectorState),
 			$state.snapshot(satelliteState) as SatelliteState,
 			sourceConfig,
 			loadedSources,
@@ -718,8 +842,13 @@
 	/** Applies an imported style, optionally moving to the tile server it came from. */
 	function applyImport(result: ImportResult, newSources?: ChosenSources) {
 		importOpen = false;
-		if (newSources) applySources(newSources);
+		// A bound styler keeps the basemap's tiles and mapping: only the style state is imported.
+		if (newSources && !basemap) applySources(newSources);
 		setBaseStyle(result.styleKey, result.config);
+		if (basemap) {
+			layerPaint = result.layerPaint ?? {};
+			applyNewGroups(result.newGroups ?? {});
+		}
 		layerZooms = result.layerZooms ?? {};
 		layerRoles = result.layerRoles ?? {};
 		overChart = result.overChart ?? [...DEFAULT_OVER_CHART];
@@ -740,6 +869,7 @@
 	 * time when it loses focus, and reloading then would take the panel away under the click that did it.
 	 */
 	function applySources(next: ChosenSources) {
+		if (basemap) return setSourceConfig(boundSources(next.config));
 		provider = next.provider;
 		// A VersaTiles server is known by its origin: its tilesets are the ones this page names.
 		setSourceConfig(next.provider === 'versatiles' ? ownServer(next.config.assets) : next.config);
@@ -763,69 +893,134 @@
 		}));
 	}
 
-	function zoomsFromHash(encoded: string | null | undefined): LayerZooms {
-		return encoded ? parseLayerZooms(decodeConfig(encoded)) : {};
-	}
-
-	function rolesFromHash(encoded: string | null | undefined): LayerRoles {
-		return encoded ? parseLayerRoles(decodeConfig(encoded)) : {};
-	}
-
-	/** The over-chart groups a link names as `{ over }`; the default where it names none. */
-	function chartFromHash(encoded: string | null | undefined): string[] {
-		const chart = encoded ? decodeConfig(encoded) : null;
-		return chart ? parseOverChart(chart.over) : [...DEFAULT_OVER_CHART];
+	/** Sets the new groups' settings, or keeps them until the mapping is there. */
+	function applyNewGroups(values: Record<string, NewGroupValue>) {
+		if (basemapMapping) {
+			vectorState = withNewGroupValues(
+				withNewGroups($state.snapshot(vectorState) as VectorState, basemapMapping),
+				basemapMapping.applied,
+				values
+			);
+		} else pendingNewGroups = values;
 	}
 
 	/** Applies a layer group setting of the hash. */
 	function applyLayerParam(param: LayerParam, encoded: string | null | undefined) {
-		if (param === 'zooms') layerZooms = zoomsFromHash(encoded);
-		else if (param === 'roles') layerRoles = rolesFromHash(encoded);
-		else if (param === 'relief') colorRelief = reliefFromHash(encoded);
-		else if (param === 'shade') hillshadeZooms = shadeFromHash(encoded);
-		else overChart = chartFromHash(encoded);
-	}
-
-	function shadeFromHash(encoded: string | null | undefined): ZoomRamp {
-		return encoded ? parseZoomRamp(decodeConfig(encoded)) : {};
-	}
-
-	function reliefFromHash(encoded: string | null | undefined): ColorRelief {
-		return encoded ? parseColorRelief(decodeConfig(encoded)) : false;
+		// The paint and the new groups belong to a basemap's mapping: an unbound styler has none.
+		if (param === 'paint' || param === 'groups') {
+			if (!basemap) return;
+		}
+		if (param === 'paint') layerPaint = paintFromParam(encoded);
+		else if (param === 'groups') applyNewGroups(newGroupsFromParam(encoded));
+		else if (param === 'zooms') layerZooms = zoomsFromParam(encoded);
+		else if (param === 'roles') layerRoles = rolesFromParam(encoded);
+		else if (param === 'relief') colorRelief = reliefFromParam(encoded);
+		else if (param === 'shade') hillshadeZooms = shadeFromParam(encoded);
+		else overChart = chartFromParam(encoded);
 	}
 
 	function sourcesFromHash(encoded: string | null | undefined): ChosenSources | undefined {
+		if (basemap) {
+			// A bound styler keeps the zoom of the online tiles and the schema only.
+			const kept = parseBoundSourcesParam(encoded ? decodeConfig(encoded) : null);
+			const online = kept.from !== undefined ? ownServer(ownAssets()).vector : undefined;
+			return {
+				provider: 'archive',
+				config: {
+					assets: ownAssets(),
+					...(kept.schema ? { schema: kept.schema } : {}),
+					...(online !== undefined && kept.from !== undefined
+						? { online: { vector: online, from: kept.from } }
+						: {}),
+				},
+			};
+		}
 		return encoded ? parseSources(decodeConfig(encoded)) : undefined;
+	}
+
+	/** The basemap's state as saved last, and as it is now: they differ while there are unsaved changes. */
+	let savedBasemap = $state.raw<BasemapState | undefined>();
+	let currentBasemap = $state.raw<BasemapState | undefined>();
+	let unsaved = $derived(
+		savedBasemap !== undefined &&
+			currentBasemap !== undefined &&
+			!sameBasemapState(savedBasemap, currentBasemap)
+	);
+	let saving = $state(false);
+
+	/** Hands the current state to the basemap. */
+	async function saveBasemap() {
+		if (!basemap) return;
+		// An update still waiting for the throttle belongs to what is saved.
+		hashManager?.flush();
+		const state = currentBasemap ?? parseBasemapState(basemap.state);
+		saving = true;
+		try {
+			await basemap.onsave(state);
+			savedBasemap = state;
+			showStatus('Saved');
+		} catch (error) {
+			showStatus(`Could not save: ${error instanceof Error ? error.message : String(error)}`);
+		} finally {
+			saving = false;
+		}
+	}
+
+	/**
+	 * The hash of a bound styler: in memory, starting from the basemap's state. The first state it
+	 * writes is the saved one, as the styler reads it: what it changes in writing it back — the order
+	 * of keys, a setting it fills in — is no change of the user's.
+	 */
+	function basemapHashManager(): HashManager {
+		const initial = parseBasemapState(basemap!.state);
+		return new HashManager(
+			map,
+			(key, cfg) => setBaseStyle(key, cfg),
+			undefined,
+			{ onChange: (encoded) => applySources(sourcesFromHash(encoded) ?? ownSources()) },
+			{ onChange: applyLayerParam },
+			basemapStorage(initial, (state) => {
+				// A mapping changed since the last save may make the first state differ from the saved
+				// one (paint of layers it no longer has is dropped): that counts as saved too.
+				savedBasemap ??= state;
+				currentBasemap = state;
+			}),
+			memoryLocation()
+		);
 	}
 
 	// Initialize hash management and style
 	let hashManager: HashManager | undefined;
 	untrack(() => {
-		if (config.hash !== false) {
-			hashManager = new HashManager(
-				map,
-				(key, cfg) => setBaseStyle(key, cfg),
-				{
-					defaultOpen: config.open ?? false,
-					onChange: (open) => (paneOpen = open),
-				},
-				// A page that offers no other sources has none to keep in a link.
-				otherSources
-					? { onChange: (encoded) => applySources(sourcesFromHash(encoded) ?? ownSources()) }
-					: undefined,
-				{ onChange: applyLayerParam },
-				config.persist
-					? localHashStorage(
-							typeof config.persist === 'string' ? config.persist : 'versatiles-styler'
-						)
-					: undefined
-			);
+		if (basemap || config.hash !== false) {
+			hashManager = basemap
+				? basemapHashManager()
+				: new HashManager(
+						map,
+						(key, cfg) => setBaseStyle(key, cfg),
+						{
+							defaultOpen: config.open ?? false,
+							onChange: (open) => (paneOpen = open),
+						},
+						// A page that offers no other sources has none to keep in a link.
+						otherSources
+							? { onChange: (encoded) => applySources(sourcesFromHash(encoded) ?? ownSources()) }
+							: undefined,
+						{ onChange: applyLayerParam },
+						config.persist
+							? localHashStorage(
+									typeof config.persist === 'string' ? config.persist : 'versatiles-styler'
+								)
+							: undefined
+					);
 			const { styleKey, config: hashConfig, panelOpen, sources, layers } = hashManager.initialize();
-			layerZooms = zoomsFromHash(layers.zooms);
-			layerRoles = rolesFromHash(layers.roles);
-			overChart = chartFromHash(layers.chart);
-			colorRelief = reliefFromHash(layers.relief);
-			hillshadeZooms = shadeFromHash(layers.shade);
+			layerZooms = zoomsFromParam(layers.zooms);
+			layerRoles = rolesFromParam(layers.roles);
+			overChart = chartFromParam(layers.chart);
+			colorRelief = reliefFromParam(layers.relief);
+			hillshadeZooms = shadeFromParam(layers.shade);
+			applyLayerParam('paint', layers.paint);
+			applyLayerParam('groups', layers.groups);
 			if (panelOpen !== undefined) paneOpen = panelOpen;
 			const hashSources = sourcesFromHash(sources);
 			if (hashSources) applySources(hashSources);
@@ -833,6 +1028,8 @@
 		} else {
 			setBaseStyle(DEFAULT_STYLE_KEY);
 		}
+		// A basemap opens on its tiles.
+		if (basemap) fitArchive = sourceConfig.vector;
 	});
 
 	// Opening and closing the panel is part of the shared state: a link shows the map as it was left.
@@ -853,10 +1050,7 @@
 	});
 	$effect(() => {
 		const relief = $state.snapshot(colorRelief) as ColorRelief;
-		hashManager?.setLayerParam(
-			'relief',
-			relief ? encodeConfig({ ...relief }) : null
-		);
+		hashManager?.setLayerParam('relief', relief ? encodeConfig({ ...relief }) : null);
 	});
 	$effect(() => {
 		const shade = $state.snapshot(hillshadeZooms) as ZoomRamp;
@@ -865,8 +1059,30 @@
 			isEmptyRamp(shade) ? null : encodeConfig(shade as Record<string, unknown>)
 		);
 	});
+	// And the paint of the mapping's new style layers, and the settings of its new groups: those only
+	// once the mapping is there, as the state has none before.
+	$effect(() => {
+		const all = $state.snapshot(layerPaint) as LayerPaint;
+		if (!basemap) return;
+		// Paint of layers the mapping no longer has is not kept, once the mapping is known.
+		const paint = basemapMapping ? keptLayerPaint(all, basemapMapping.applied.newLayers) : all;
+		hashManager?.setLayerParam('paint', Object.keys(paint).length > 0 ? encodeConfig(paint) : null);
+	});
+	$effect(() => {
+		const values = newGroups;
+		if (!basemapMapping) return;
+		hashManager?.setLayerParam(
+			'groups',
+			Object.keys(values).length > 0 ? encodeConfig(values) : null
+		);
+	});
 	// And so are the tile sources, unless they are the page's own.
 	$effect(() => {
+		if (basemap) {
+			const kept = boundSourcesParam(sourceConfig);
+			hashManager?.setSources(kept ? encodeConfig(kept) : null);
+			return;
+		}
 		const chosen = { provider, config: sourceConfig };
 		const own = JSON.stringify(chosen) === JSON.stringify(ownSources());
 		hashManager?.setSources(own ? null : encodeConfig(serializeSources(chosen)));
@@ -911,7 +1127,24 @@
 		<!-- What the pane is, and what can be done to the style as a whole: one row each. -->
 		<div class="styler-top">
 			<div class="styler-head">
-				<span class="styler-title">VersaTiles Map Styler</span>
+				{#if basemap}
+					<span class="styler-title" title={basemap.name}
+						>{basemap.name}{#if unsaved}<span
+								class="unsaved-dot"
+								title="Unsaved changes"
+								aria-label="Unsaved changes">●</span
+							>{/if}</span
+					>
+					<button
+						type="button"
+						class="text-button"
+						disabled={saving || !unsaved}
+						title={unsaved ? 'Save the style to the basemap' : 'No unsaved changes'}
+						onclick={saveBasemap}>Save</button
+					>
+				{:else}
+					<span class="styler-title">VersaTiles Map Styler</span>
+				{/if}
 				<!--
 					Resetting belongs with the title rather than beside Import and Export: it comes and goes
 					with the changes, and in the row below it would push that pair off centre.
@@ -988,6 +1221,7 @@
 				bind:previewOffline
 				pmtiles={pmtiles !== undefined}
 				{archives}
+				fixed={basemap ? { tileset: basemap.tileset, elevation: basemap.elevation } : undefined}
 				server={ownServer}
 				onprovider={setProvider}
 				onconfig={chooseSources}
@@ -1031,6 +1265,11 @@
 				bind:overChart
 				bind:colorRelief
 				bind:hillshadeZooms
+				labels={basemapMapping?.labels}
+				newLayers={basemapMapping?.applied.newLayers}
+				bind:layerPaint
+				{layerWarnings}
+				newGroupChanges={Object.keys(newGroups).length}
 			/>
 		{/if}
 		<!-- The project itself, which is neither the map nor the style: out of the action rows. -->

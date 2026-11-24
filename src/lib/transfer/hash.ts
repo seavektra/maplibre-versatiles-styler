@@ -47,9 +47,19 @@ export interface SourcesHash {
 /**
  * The settings of layer groups the hash carries, each as one encoded parameter: their zoom ranges,
  * their source roles and the groups drawn over the chart. `relief` is the colour by height and `shade`
- * the hillshade's zooms, which the styler adds to the style the same way.
+ * the hillshade's zooms, which the styler adds to the style the same way. `paint` is the paint of the
+ * new style layers of a basemap's layer mapping, and `groups` the settings of its new groups, which
+ * the library options have no place for.
  */
-export const LAYER_PARAMS = ['zooms', 'roles', 'chart', 'relief', 'shade'] as const;
+export const LAYER_PARAMS = [
+	'zooms',
+	'roles',
+	'chart',
+	'relief',
+	'shade',
+	'paint',
+	'groups',
+] as const;
 export type LayerParam = (typeof LAYER_PARAMS)[number];
 
 /** The encoded layer group settings a hash names, by parameter; one it does not name is left out. */
@@ -64,6 +74,115 @@ export interface LayersHash {
 export interface HashStorage {
 	load(): string | null;
 	save(hash: string): void;
+}
+
+/** Where the hash lives: the page's URL, or memory for a styler bound to a basemap. */
+export interface HashLocation {
+	read(): string;
+	write(hash: string): void;
+}
+
+/** The page's URL hash. */
+export const windowLocation: HashLocation = {
+	read: () => window.location.hash,
+	write: (hash) => window.history.replaceState(null, '', hash),
+};
+
+/** A hash kept in memory: nothing else changes it, and the page's URL stays as it is. */
+export function memoryLocation(initial = ''): HashLocation {
+	let hash = initial;
+	return {
+		read: () => hash,
+		write: (next) => (hash = next),
+	};
+}
+
+/** The parameters of a hash, in order: `#a=1&b=2` → `{ a: '1', b: '2' }`. */
+export function hashParams(hash: string): Map<string, string> {
+	const params = new Map<string, string>();
+	for (const segment of hash.replace(/^#/, '').split('&')) {
+		const eq = segment.indexOf('=');
+		if (eq > 0) params.set(segment.slice(0, eq), segment.slice(eq + 1));
+	}
+	return params;
+}
+
+/**
+ * The state of a styler bound to a basemap, as the page keeps it: the hash parameters, each encoded
+ * one decoded (see {@link decodeConfig}), so that the stored JSON is readable. The map view and the
+ * panel are not part of it: moving the map or opening the panel changes no basemap.
+ */
+export interface BasemapState {
+	version: 1;
+	params: Record<string, unknown>;
+}
+
+/** The hash parameters a basemap does not keep. */
+const VIEW_PARAMS = new Set(['map', 'panel']);
+
+/** The basemap state of a hash. */
+export function basemapState(hash: string): BasemapState {
+	const params: Record<string, unknown> = {};
+	for (const [key, value] of hashParams(hash)) {
+		if (VIEW_PARAMS.has(key) || key === '__proto__') continue;
+		params[key] = decodeConfig(value) ?? value;
+	}
+	return { version: 1, params };
+}
+
+/**
+ * The params of a stored basemap state, from data that may be anything: those of `{ version: 1,
+ * params }`, nothing for anything else.
+ */
+export function parseBasemapState(value: unknown): BasemapState {
+	const record = (v: unknown): v is Record<string, unknown> =>
+		v !== null && typeof v === 'object' && !Array.isArray(v);
+	if (!record(value) || value.version !== 1 || !record(value.params)) {
+		return { version: 1, params: {} };
+	}
+	const params: Record<string, unknown> = {};
+	for (const [key, entry] of Object.entries(value.params)) {
+		if (VIEW_PARAMS.has(key) || key === '__proto__' || !/^[a-z]+$/i.test(key)) continue;
+		if (typeof entry === 'string' || record(entry)) params[key] = entry;
+	}
+	return { version: 1, params };
+}
+
+/** The hash of a basemap state: text parameters as they are, the others encoded. */
+export function basemapHash(state: BasemapState): string {
+	const parts = Object.entries(state.params).map(
+		([key, value]) =>
+			`${key}=${typeof value === 'string' ? value : encodeConfig(value as Record<string, unknown>)}`
+	);
+	return parts.length > 0 ? '#' + parts.join('&') : '';
+}
+
+/** Whether two basemap states hold the same settings, whatever the order of their keys. */
+export function sameBasemapState(a: BasemapState, b: BasemapState): boolean {
+	return canonical(a) === canonical(b);
+}
+
+function canonical(value: unknown): string {
+	if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
+	if (value !== null && typeof value === 'object') {
+		const entries = Object.entries(value).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+		return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${canonical(v)}`).join(',')}}`;
+	}
+	return JSON.stringify(value);
+}
+
+/**
+ * The storage of a styler bound to a basemap: it starts from the basemap's state, and reports each
+ * hash the styler writes as a basemap state to `onwrite`. Saving it to the basemap is the page's.
+ */
+export function basemapStorage(
+	initial: BasemapState,
+	onwrite: (state: BasemapState) => void
+): HashStorage {
+	return {
+		load: () => basemapHash(initial) || null,
+		save: (hash) => onwrite(basemapState(hash)),
+	};
 }
 
 /** The hash kept in the browser's `localStorage` under a key. Storage that refuses is no storage. */
@@ -94,6 +213,7 @@ export class HashManager {
 	private currentSources: string | null = null;
 	private layers: LayersHash | undefined;
 	private storage: HashStorage | undefined;
+	private location: HashLocation;
 	private currentLayers: LayerParams = {};
 	private currentStyleKey: StyleKey = DEFAULT_STYLE_KEY;
 	private currentConfigEncoded: string | null = null;
@@ -110,7 +230,8 @@ export class HashManager {
 		panel?: PanelHash,
 		sources?: SourcesHash,
 		layers?: LayersHash,
-		storage?: HashStorage
+		storage?: HashStorage,
+		location: HashLocation = windowLocation
 	) {
 		this.map = map;
 		this.onStyleChange = onStyleChange;
@@ -118,6 +239,7 @@ export class HashManager {
 		this.sources = sources;
 		this.layers = layers;
 		this.storage = storage;
+		this.location = location;
 		this.boundOnMoveEnd = () => this.onMoveEnd();
 		this.boundOnHashChange = () => this.onHashChange();
 	}
@@ -132,12 +254,13 @@ export class HashManager {
 		/** The encoded layer group settings the hash names, if it is told about them. */
 		layers: LayerParams;
 	} {
-		this.tryDisableMapHash();
+		// A hash in memory leaves the page's URL, and the map's own hash, to the page.
+		if (this.location === windowLocation) this.tryDisableMapHash();
 
 		// A page opened without a hash starts where it was left.
-		if (this.storage && window.location.hash.replace(/^#/, '') === '') {
+		if (this.storage && this.location.read().replace(/^#/, '') === '') {
 			const stored = this.storage.load();
-			if (stored) window.history.replaceState(null, '', stored);
+			if (stored) this.location.write(stored);
 		}
 
 		const { mapView, styleKey, config, panelOpen, sources, layers } = this.parseHash();
@@ -157,7 +280,9 @@ export class HashManager {
 		}
 
 		this.map.on('moveend', this.boundOnMoveEnd);
-		window.addEventListener('hashchange', this.boundOnHashChange);
+		if (this.location === windowLocation) {
+			window.addEventListener('hashchange', this.boundOnHashChange);
+		}
 
 		// Write initial hash once map is ready
 		if (this.map.loaded()) {
@@ -209,6 +334,14 @@ export class HashManager {
 		this.updateHash();
 	}
 
+	/** Writes a hash update that is still waiting for the throttle at once. */
+	flush(): void {
+		if (this.throttleTimer === null) return;
+		clearTimeout(this.throttleTimer);
+		this.throttleTimer = null;
+		this.writeHash();
+	}
+
 	destroy(): void {
 		this.map.off('moveend', this.boundOnMoveEnd);
 		window.removeEventListener('hashchange', this.boundOnHashChange);
@@ -226,7 +359,7 @@ export class HashManager {
 		sources: string | null;
 		layers: LayerParams;
 	} {
-		const hash = window.location.hash.replace(/^#/, '');
+		const hash = this.location.read().replace(/^#/, '');
 		if (!hash)
 			return {
 				mapView: null,
@@ -237,13 +370,7 @@ export class HashManager {
 				layers: {},
 			};
 
-		const params = new Map<string, string>();
-		for (const segment of hash.split('&')) {
-			const eqIndex = segment.indexOf('=');
-			if (eqIndex > 0) {
-				params.set(segment.slice(0, eqIndex), segment.slice(eqIndex + 1));
-			}
-		}
+		const params = hashParams(hash);
 
 		let mapView: MapView | null = null;
 		const mapStr = params.get('map');
@@ -332,12 +459,16 @@ export class HashManager {
 		}
 		this.throttleTimer = setTimeout(() => {
 			this.throttleTimer = null;
-			this.updating = true;
-			const hash = this.buildHash();
-			window.history.replaceState(null, '', hash);
-			this.storage?.save(hash);
-			this.updating = false;
+			this.writeHash();
 		}, THROTTLE_MS);
+	}
+
+	private writeHash(): void {
+		this.updating = true;
+		const hash = this.buildHash();
+		this.location.write(hash);
+		this.storage?.save(hash);
+		this.updating = false;
 	}
 
 	private onMoveEnd(): void {

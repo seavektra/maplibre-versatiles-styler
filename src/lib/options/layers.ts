@@ -46,24 +46,35 @@ const LABELS: Record<string, string> = {
 /**
  * The layer groups as the section shows them, in the order of the resolved tree. Which groups exist
  * comes from `layerGroups` — `osm.layerGroups`, or `satellite.layerGroups`, which leaves out what the
- * overlay does not draw.
+ * overlay does not draw. `labels` names groups by their path (`boundaries.country`), over the
+ * styler's own names: a basemap's layer mapping sets them.
  */
-export function layerNodes(layerGroups: LayerGroupMap, defaults: ResolvedLayerGroups): LayerNode[] {
-	return nodesOf(layerGroups, defaults as unknown as Tree, []);
+export function layerNodes(
+	layerGroups: LayerGroupMap,
+	defaults: ResolvedLayerGroups,
+	labels: Record<string, string> = {}
+): LayerNode[] {
+	return nodesOf(layerGroups, defaults as unknown as Tree, [], labels);
 }
 
-function nodesOf(groups: LayerGroupMap, defaults: Tree, path: string[]): LayerNode[] {
+function nodesOf(
+	groups: LayerGroupMap,
+	defaults: Tree,
+	path: string[],
+	labels: Record<string, string>
+): LayerNode[] {
 	return Object.keys(defaults)
 		.filter((key) => groups[key] !== undefined && !(path.length === 0 && ALIASES.has(key)))
 		.map((key) => {
 			const group = groups[key];
 			const child = defaults[key];
 			const isLeaf = Array.isArray(group) || typeof child !== 'object';
-			const children = isLeaf ? [] : nodesOf(group, child as Tree, [...path, key]);
+			const children = isLeaf ? [] : nodesOf(group, child as Tree, [...path, key], labels);
+			const id = [...path, key].join('.');
 			return {
 				key,
 				path: [...path, key],
-				label: labelOf(key),
+				label: Object.prototype.hasOwnProperty.call(labels, id) ? labels[id] : labelOf(key),
 				children,
 				line: isLeaf && isLine(child),
 			};
