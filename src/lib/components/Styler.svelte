@@ -1028,8 +1028,9 @@
 		} else {
 			setBaseStyle(DEFAULT_STYLE_KEY);
 		}
-		// A basemap opens on its tiles.
-		if (basemap) fitArchive = sourceConfig.vector;
+		// A basemap opens where it says, or on its tiles.
+		if (basemap?.view) map.jumpTo(basemap.view);
+		else if (basemap) fitArchive = sourceConfig.vector;
 	});
 
 	// Opening and closing the panel is part of the shared state: a link shows the map as it was left.
