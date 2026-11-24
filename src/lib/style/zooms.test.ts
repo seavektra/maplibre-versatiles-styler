@@ -161,6 +161,19 @@ describe('tileLayerZooms', () => {
 				],
 			})
 		).toEqual({ land: { min: 7, max: 8 }, ocean: { min: 1, max: 8 } });
+	});
+
+	it('leaves out a tile layer that starts above the tileset’s last zoom', () => {
+		expect(
+			tileLayerZooms({
+				minzoom: 0,
+				maxzoom: 8,
+				vector_layers: [
+					{ id: 'pier_lines', minzoom: 12, maxzoom: 14 },
+					{ id: 'ocean', minzoom: 0, maxzoom: 14 },
+				],
+			})
+		).toEqual({ ocean: { min: 0, max: 8 } });
 		expect(tileLayerZooms({})).toEqual({});
 	});
 });

@@ -238,12 +238,14 @@
 			: []
 		).map((layer) => ({
 			name: layer.id,
-			zooms: zoomText(layer.id) ?? '–',
+			zooms:
+				zoomText(layer.id) ??
+				`none: listed from z${layer.minzoom ?? 0}, the tiles end at z${tileJSON?.maxzoom ?? '?'}`,
 			fields: Object.keys(layer.fields ?? {}).length,
 			styleLayers: allLayers.filter((id) => tileLayerOf(id) === layer.id).length,
 		}))
 	);
-	/** Style layers reading a tile layer the tileset does not have. */
+	/** Style layers reading a tile layer that is in no tile: missing from the tileset, or listed only above its last zoom. */
 	let missingTileLayers = $derived(
 		allLayers.filter((id) => {
 			const read = tileLayerOf(id);
@@ -705,6 +707,12 @@
 	{@const text = zoomText(tileLayer)}
 	{#if text}
 		<span class="zoom-chip" title="Zooms the tileset has this tile layer at">{text}</span>
+	{:else if tileLayer !== undefined && tileLayers.includes(tileLayer)}
+		<span
+			class="zoom-chip zoom-chip-missing"
+			title="The tileset lists this tile layer only above its last zoom, so no tile has it"
+			>no tiles</span
+		>
 	{:else if tileLayer !== undefined && tileJSON}
 		<span class="zoom-chip zoom-chip-missing" title="The tileset has no such tile layer"
 			>not in tileset</span
@@ -741,7 +749,7 @@
 		tiles up. Style layers counts the style layers reading it.
 	</p>
 	{#if missingTileLayers.length > 0}
-		<h4>Reading a tile layer the tileset lacks</h4>
+		<h4>Reading a tile layer no tile has</h4>
 		<ul class="details-layers">
 			{#each missingTileLayers as id (id)}
 				<li>
