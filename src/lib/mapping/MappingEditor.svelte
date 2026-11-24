@@ -63,11 +63,20 @@
 		uniqueWarnings,
 	} from './session';
 	import FilterRowsEditor from './FilterRowsEditor.svelte';
+	import {
+		drawsOnline,
+		loadOnlineTileJSON,
+		onlineSetting,
+		onlineTileZooms,
+		publishedRoles,
+	} from './online_check';
 
 	let {
 		definition,
 		tileset: initialTileset,
 		origin,
+		stylerState,
+		sources,
 		onchange,
 	}: {
 		/** The mapping to edit, as stored: parsed with `parseLayerMapping`. */
@@ -76,6 +85,13 @@
 		tileset: BasemapFile;
 		/** Where fonts and sprites would come from: the style is built, never drawn. */
 		origin: string;
+		/**
+		 * The basemap's saved styler state: whether its style switches to online tiles, and the role each
+		 * style layer is drawn with. None says nothing about online tiles.
+		 */
+		stylerState?: unknown;
+		/** Tilesets the server has under other names, as the styler's `sources`: the online tiles are its `vector`. */
+		sources?: { vector?: string };
 		onchange?: (definition: LayerMapping, warnings: string[]) => void;
 	} = $props();
 
@@ -104,6 +120,24 @@
 		let outdated = false;
 		void loadSources(archiveSources(current.url, origin)).vector.then((loaded) => {
 			if (!outdated) tileJSON = loaded;
+		});
+		return () => (outdated = true);
+	});
+
+	/** What the saved state says about online tiles; `undefined` when there is no state to read. */
+	let online = $derived(
+		onlineSetting(stylerState, { tileset, origin, ...(sources ? { sources } : {}) })
+	);
+	/** The online tiles' TileJSON: `undefined` while it loads or with no online tiles, `null` when unreadable. */
+	let onlineTileJSON = $state.raw<LoadedTileJSON | undefined>();
+
+	$effect(() => {
+		const url = online?.sourceConfig.online?.vector;
+		onlineTileJSON = undefined;
+		if (url === undefined) return;
+		let outdated = false;
+		void loadOnlineTileJSON(url).then((loaded) => {
+			if (!outdated) onlineTileJSON = loaded;
 		});
 		return () => (outdated = true);
 	});
@@ -155,12 +189,47 @@
 	/** Where the tileset has each tile layer, by its name. */
 	let tileZooms = $derived(tileJSON ? tileLayerZooms(tileJSON) : {});
 
-	/** A tile layer's zooms in the tileset, as `z0–14`; `undefined` when the tileset lacks it. */
-	function zoomText(tileLayer: string | undefined): string | undefined {
-		const span = tileLayer === undefined ? undefined : tileZooms[tileLayer];
+	/** Where the online tiles draw each tile layer, from the switch zoom on, by its name. */
+	let onlineZooms = $derived(
+		onlineTileJSON && online?.from !== undefined ? onlineTileZooms(onlineTileJSON, online.from) : {}
+	);
+	/** The role each style layer is drawn with in the published style; empty without online tiles. */
+	let roles = $derived(
+		online && tileJSON && onlineTileJSON
+			? publishedRoles(online, mapping, { vector: tileJSON, online: onlineTileJSON }, tileset.name)
+			: {}
+	);
+	/**
+	 * Whether the check against the online tiles can be made: the saved state switches to online tiles
+	 * and they have loaded. Otherwise only the file is checked.
+	 */
+	let onlineChecked = $derived(online?.from !== undefined && !!onlineTileJSON);
+
+	function spanText(span: { min: number; max: number } | undefined): string | undefined {
 		if (!span) return undefined;
 		return span.min === span.max ? `z${span.min}` : `z${span.min}–${span.max}`;
 	}
+
+	/** A tile layer's zooms in the tileset, as `z0–14`; `undefined` when the tileset lacks it. */
+	function zoomText(tileLayer: string | undefined): string | undefined {
+		return spanText(tileLayer === undefined ? undefined : tileZooms[tileLayer]);
+	}
+
+	/** The zooms a style layer draws online tiles at, as `z12–14`; `undefined` when it draws none. */
+	function onlineText(id: string): string | undefined {
+		const read = tileLayerOf(id);
+		if (!onlineChecked || read === undefined || !drawsOnline(roles[id])) return undefined;
+		return spanText(onlineZooms[read]);
+	}
+
+	/** What the online tiles' subtitle says: whether the basemap's style switches to them. */
+	let onlineStatus = $derived.by(() => {
+		if (!online) return undefined;
+		if (online.from === undefined) return 'online tiles are off';
+		if (onlineTileJSON === null)
+			return `online tiles are on, from z${online.from}, but cannot be read`;
+		return `online tiles are on, from z${online.from}`;
+	});
 
 	let tab = $state<'groups' | 'json'>('groups');
 	let selected = $state<string | undefined>();
@@ -231,25 +300,47 @@
 		...mapping.newLayers.map((layer) => layer.id),
 	]);
 
-	/** Every tile layer of the tileset, with its zooms, its fields and the style layers reading it. */
-	let tileLayerRows = $derived(
-		(tileJSON && 'vector_layers' in tileJSON && Array.isArray(tileJSON.vector_layers)
-			? tileJSON.vector_layers
-			: []
-		).map((layer) => ({
+	type VectorLayer = { id: string; minzoom?: number; maxzoom?: number; fields?: object };
+	function vectorLayersOf(loaded: LoadedTileJSON | undefined): VectorLayer[] {
+		return loaded && 'vector_layers' in loaded && Array.isArray(loaded.vector_layers)
+			? (loaded.vector_layers as VectorLayer[])
+			: [];
+	}
+
+	/**
+	 * Every tile layer of the file, and with online tiles those only they have: where the file has it
+	 * (or what its metadata gives when no tile has it), where the online tiles add it, its fields and
+	 * the style layers reading it.
+	 */
+	let tileLayerRows = $derived.by(() => {
+		const fileLayers = vectorLayersOf(tileJSON);
+		const inFile = new Set(fileLayers.map((layer) => layer.id));
+		const onlineOnly = onlineChecked
+			? vectorLayersOf(onlineTileJSON).filter((layer) => !inFile.has(layer.id))
+			: [];
+		return [...fileLayers, ...onlineOnly].map((layer) => ({
 			name: layer.id,
-			zooms:
-				zoomText(layer.id) ??
-				`none: listed from z${layer.minzoom ?? 0}, the tiles end at z${tileJSON?.maxzoom ?? '?'}`,
+			file: inFile.has(layer.id)
+				? (zoomText(layer.id) ??
+					`none · metadata gives ${spanText({ min: layer.minzoom ?? 0, max: layer.maxzoom ?? layer.minzoom ?? 0 })}`)
+				: '—',
+			online: spanText(onlineZooms[layer.id]) ?? '—',
 			fields: Object.keys(layer.fields ?? {}).length,
 			styleLayers: allLayers.filter((id) => tileLayerOf(id) === layer.id).length,
-		}))
-	);
-	/** Style layers reading a tile layer that is in no tile: missing from the tileset, or listed only above its last zoom. */
+		}));
+	});
+	/**
+	 * Style layers reading a tile layer the file has no tiles for (missing, or listed only above its
+	 * last zoom). With online tiles checked, those drawn from the online tiles are left out: the rest
+	 * draw nothing.
+	 */
 	let missingTileLayers = $derived(
 		allLayers.filter((id) => {
 			const read = tileLayerOf(id);
-			return read !== undefined && !owns(tileZooms, read);
+			if (read === undefined || owns(tileZooms, read)) return false;
+			if (!onlineChecked) return true;
+			// A layer the published style leaves out (its group switched off) is not drawn anyway.
+			return owns(roles, id) && onlineText(id) === undefined;
 		})
 	);
 
@@ -703,19 +794,30 @@
 	{/each}
 {/snippet}
 
-{#snippet zoomChip(tileLayer: string | undefined)}
+{#snippet zoomChip(id: string)}
+	{@const tileLayer = tileLayerOf(id)}
 	{@const text = zoomText(tileLayer)}
+	{@const onlineZoomText = text ? undefined : onlineText(id)}
 	{#if text}
-		<span class="zoom-chip" title="Zooms the tileset has this tile layer at">{text}</span>
-	{:else if tileLayer !== undefined && tileLayers.includes(tileLayer)}
+		<span class="zoom-chip" title="Zooms the file has this tile layer at">{text}</span>
+	{:else if onlineZoomText}
+		<span
+			class="zoom-chip zoom-chip-online"
+			title="The file has no tiles for this tile layer; the online tiles draw it at these zooms"
+			>online {onlineZoomText}</span
+		>
+	{:else if tileLayer !== undefined && tileJSON && onlineChecked && owns(roles, id)}
 		<span
 			class="zoom-chip zoom-chip-missing"
-			title="The tileset lists this tile layer only above its last zoom, so no tile has it"
-			>no tiles</span
+			title="Neither the file nor the online tiles this style layer draws from have its tile layer"
+			>draws nothing</span
 		>
 	{:else if tileLayer !== undefined && tileJSON}
-		<span class="zoom-chip zoom-chip-missing" title="The tileset has no such tile layer"
-			>not in tileset</span
+		<span
+			class="zoom-chip zoom-chip-missing"
+			title={tileLayers.includes(tileLayer)
+				? 'The file lists this tile layer only above its last zoom, so no tile has it'
+				: 'The file has no such tile layer'}>not in file</span
 		>
 	{/if}
 {/snippet}
@@ -723,20 +825,25 @@
 {#snippet tileLayersView()}
 	<header class="details-header">
 		<h3>Tile layers</h3>
-		<span class="details-path">in {tileset.name}</span>
+		<span class="details-path">in {tileset.name}{onlineStatus ? ` · ${onlineStatus}` : ''}</span>
 	</header>
 	{#if tileLayerRows.length === 0}
 		<p class="mapping-hint">The tileset lists no tile layers.</p>
 	{:else}
 		<table class="tile-layers">
 			<thead>
-				<tr><th>Tile layer</th><th>Zooms</th><th>Fields</th><th>Style layers</th></tr>
+				<tr>
+					<th>Tile layer</th><th>File</th>{#if onlineChecked}<th>Online</th>{/if}<th>Fields</th><th
+						>Style layers</th
+					>
+				</tr>
 			</thead>
 			<tbody>
 				{#each tileLayerRows as row (row.name)}
 					<tr>
 						<td><code>{row.name}</code></td>
-						<td class="tile-zooms">{row.zooms}</td>
+						<td class="tile-zooms">{row.file}</td>
+						{#if onlineChecked}<td class="tile-zooms">{row.online}</td>{/if}
 						<td>{row.fields}</td>
 						<td>{row.styleLayers}</td>
 					</tr>
@@ -745,11 +852,12 @@
 		</table>
 	{/if}
 	<p class="mapping-hint">
-		Zooms are where the tileset has the tile layer; above its last zoom the map scales that zoom's
-		tiles up. Style layers counts the style layers reading it.
+		File: the zooms the file has tiles for; above its last zoom the map scales that zoom's tiles up.
+		{#if onlineChecked}Online: the zooms the online tiles add, from the switch zoom on.{/if}
+		Style layers counts the style layers reading it.
 	</p>
 	{#if missingTileLayers.length > 0}
-		<h4>Reading a tile layer no tile has</h4>
+		<h4>{onlineChecked ? 'Draws nothing' : 'Not in this file'}</h4>
 		<ul class="details-layers">
 			{#each missingTileLayers as id (id)}
 				<li>
@@ -757,6 +865,15 @@
 				</li>
 			{/each}
 		</ul>
+		<p class="mapping-hint">
+			{#if onlineChecked}
+				These style layers read a tile layer the file has no tiles for, and the online tiles do not
+				draw it for them either.
+			{:else}
+				These style layers read a tile layer the file has no tiles for. Switch on online tiles in
+				the styler's Tile sources to see whether they draw online.
+			{/if}
+		</p>
 	{/if}
 {/snippet}
 
@@ -876,7 +993,7 @@
 					<div class="layer-row">
 						<code class="layer-id">{id}</code>
 						<span class="layer-tile">{tileLayerOf(id) ?? '–'}</span>
-						{@render zoomChip(tileLayerOf(id))}
+						{@render zoomChip(id)}
 						{@render tags(layerTags(id))}
 						<span class="layer-actions">
 							<button

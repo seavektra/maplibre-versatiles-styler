@@ -15,6 +15,13 @@ export interface LayerMappingEditorOptions {
 	tileset: BasemapFile;
 	/** The VersaTiles server of the fonts and sprites; the page's origin by default. */
 	origin?: string;
+	/**
+	 * The basemap's saved styler state, `{ version: 1, params }`: with it, a style layer the file has no
+	 * tiles for is checked against the online tiles its style switches to. None checks the file only.
+	 */
+	stylerState?: unknown;
+	/** Tilesets the server has under other names, as the styler's `sources`: the online tiles are its `vector`. */
+	sources?: { vector?: string };
 	/** MapLibre's `addProtocol`, to register `pmtiles://` for maps on the same page. */
 	addProtocol?: typeof addProtocol;
 	/** Called on every edit, with the definition and what it warns of. */
@@ -47,6 +54,8 @@ export class LayerMappingEditor {
 				definition: options.definition ?? { version: 1 },
 				tileset: { name: options.tileset.name, url: options.tileset.url },
 				origin: options.origin ?? window.location.origin,
+				...(options.stylerState !== undefined ? { stylerState: options.stylerState } : {}),
+				...(options.sources ? { sources: options.sources } : {}),
 				onchange: options.onchange,
 			},
 		}) as unknown as EditorExports;
