@@ -362,12 +362,23 @@
 	}
 
 	/** Paths a new group can go under: the top level and every group with sub-groups. */
+	/**
+	 * Whether a group can take a sub-group: it has sub-groups already, or it is a new group with no
+	 * style layers (a group holds either style layers or sub-groups).
+	 */
+	function canHoldGroups(node: LayerNode): boolean {
+		if (node.children.length > 0) return true;
+		const path = node.path.join('.');
+		return mapping.groups.some((group) => group.path === path) && layersOf(path).length === 0;
+	}
+
 	let parentPaths = $derived([
 		'',
 		...(function parents(list: readonly LayerNode[]): string[] {
-			return list.flatMap((node) =>
-				node.children.length === 0 ? [] : [node.path.join('.'), ...parents(node.children)]
-			);
+			return list.flatMap((node) => [
+				...(canHoldGroups(node) ? [node.path.join('.')] : []),
+				...parents(node.children),
+			]);
 		})(nodes),
 	]);
 
@@ -644,6 +655,11 @@
 			>
 			<button type="button" class="text-button" onclick={() => openNewLayer(path)}
 				>+ New style layer</button
+			>
+		{/if}
+		{#if canHoldGroups(node)}
+			<button type="button" class="text-button" onclick={() => openNewGroup(path)}
+				>+ Sub-group</button
 			>
 		{/if}
 		<button
