@@ -288,6 +288,44 @@
 	function select(path: string) {
 		selected = path;
 		panel = undefined;
+		expandTo(path);
+	}
+
+	// ── Collapsing the tree ──────────────────────────────────────────────────────
+	/** Paths of the groups whose sub-groups are hidden; every group starts expanded. */
+	let collapsed = $state<Record<string, boolean>>({});
+
+	function branchPaths(list: readonly LayerNode[]): string[] {
+		return list.flatMap((node) =>
+			node.children.length === 0 ? [] : [node.path.join('.'), ...branchPaths(node.children)]
+		);
+	}
+
+	function toggleCollapsed(path: string) {
+		collapsed = { ...collapsed, [path]: !collapsed[path] };
+	}
+
+	function collapseAll() {
+		collapsed = Object.fromEntries(branchPaths(nodes).map((path) => [path, true]));
+	}
+
+	function expandAll() {
+		collapsed = {};
+	}
+
+	/** Expands the groups above `path`, so a selected group is on show. */
+	function expandTo(path: string) {
+		const keys = path.split('.');
+		const next = { ...collapsed };
+		let changed = false;
+		for (let i = 1; i < keys.length; i++) {
+			const parent = keys.slice(0, i).join('.');
+			if (next[parent]) {
+				delete next[parent];
+				changed = true;
+			}
+		}
+		if (changed) collapsed = next;
 	}
 
 	function draftsOf(filter: unknown): RowDraft[] | undefined {
@@ -541,6 +579,10 @@
 	{:else}
 		<div class="mapping-columns">
 			<nav class="mapping-tree" aria-label="Style groups">
+				<div class="tree-toolbar">
+					<button type="button" class="text-button" onclick={expandAll}>Expand all</button>
+					<button type="button" class="text-button" onclick={collapseAll}>Collapse all</button>
+				</div>
 				<ul>
 					{@render tree(nodes)}
 				</ul>
@@ -570,19 +612,33 @@
 {#snippet tree(list: readonly LayerNode[])}
 	{#each list as node (node.path.join('.'))}
 		{@const path = node.path.join('.')}
+		{@const branch = node.children.length > 0}
 		<li>
-			<button
-				type="button"
-				class="tree-group"
-				aria-current={selected === path ? 'true' : undefined}
-				onclick={() => select(path)}
-			>
-				<span class="tree-label">{node.label}</span>
-				{#if node.children.length === 0}
-					<span class="tree-count">{layersOf(path).length}</span>
+			<div class="tree-row">
+				{#if branch}
+					<button
+						type="button"
+						class="tree-toggle"
+						aria-expanded={!collapsed[path]}
+						aria-label={`${collapsed[path] ? 'Expand' : 'Collapse'} ${node.label}`}
+						onclick={() => toggleCollapsed(path)}>{collapsed[path] ? '▸' : '▾'}</button
+					>
+				{:else}
+					<span class="tree-toggle-space"></span>
 				{/if}
-				{@render tags(groupTags(path))}
-			</button>
+				<button
+					type="button"
+					class="tree-group"
+					aria-current={selected === path ? 'true' : undefined}
+					onclick={() => select(path)}
+				>
+					<span class="tree-label">{node.label}</span>
+					{#if node.children.length === 0}
+						<span class="tree-count">{layersOf(path).length}</span>
+					{/if}
+					{@render tags(groupTags(path))}
+				</button>
+			</div>
 			{#each mergedInto(path) as source (source)}
 				<div class="tree-merged">
 					merged: {labelOf(source)}
@@ -593,7 +649,7 @@
 					>
 				</div>
 			{/each}
-			{#if node.children.length > 0}
+			{#if branch && !collapsed[path]}
 				<ul>
 					{@render tree(node.children)}
 				</ul>

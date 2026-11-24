@@ -3117,6 +3117,36 @@ $chevron-down: "%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E
 		}
 	}
 
+	.tree-toolbar {
+		display: flex;
+		gap: 12px;
+		margin-bottom: 6px;
+	}
+
+	.tree-row {
+		display: flex;
+		align-items: flex-start;
+	}
+
+	.tree-toggle,
+	.tree-toggle-space {
+		flex: none;
+		width: 18px;
+		padding: 3px 0;
+	}
+
+	.tree-toggle {
+		border: none;
+		background: none;
+		color: var(--muted);
+		font: inherit;
+		cursor: pointer;
+
+		&:hover {
+			color: inherit;
+		}
+	}
+
 	.tree-count {
 		color: var(--subtle);
 		font-size: 11px;
