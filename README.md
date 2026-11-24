@@ -96,7 +96,7 @@ map.addControl(new VersaTilesStylerControl({ open: true }));
       });
 
       map.addControl(
-        new VersaTilesStylerControl({ open: true }),
+        new VersaTilesStylerControl.default({ open: true }),
         "top-left"
       );
     });
@@ -105,7 +105,19 @@ map.addControl(new VersaTilesStylerControl({ open: true }));
 </html>
 ```
 
-When using the UMD build, the control is available as the global `VersaTilesStylerControl`.
+When using the UMD build, the module is available as the global `VersaTilesStylerControl`: the control is `VersaTilesStylerControl.default`, next to the named exports `LayerMappingEditor` and `buildBasemapStyle` (see [SEAVEKTRA.md](SEAVEKTRA.md)).
+
+### Basemap exports
+
+```js
+import VersaTilesStylerControl, { LayerMappingEditor, buildBasemapStyle } from 'maplibre-versatiles-styler';
+
+// Edit a basemap's layer mapping, without a map.
+const editor = new LayerMappingEditor({ container, definition: mapping, tileset: { name, url }, onchange: (mapping, warnings) => {} });
+
+// Build the app style from a basemap's saved state and mapping, without a map.
+const { style, warnings } = await buildBasemapStyle({ state, mapping, tileset: { url }, elevation: { url }, origin, name });
+```
 
 ---
 
