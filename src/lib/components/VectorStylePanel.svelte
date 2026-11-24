@@ -8,6 +8,8 @@
 	import type { ColorRelief } from '../style/color_relief';
 	import { isEmptyRamp, type ZoomRamp } from '../style/zoom_ramp';
 	import type { StyleSpecification } from 'maplibre-gl';
+	import type { NewStyleLayer } from '../style/layer_mapping';
+	import type { LayerPaint } from '../style/basemap';
 	import SidebarSection from './SidebarSection.svelte';
 	import ColorOptions from './sections/ColorOptions.svelte';
 	import RecolorOptions from './sections/RecolorOptions.svelte';
@@ -39,6 +41,11 @@
 		overChart = $bindable(),
 		colorRelief = $bindable(false),
 		hillshadeZooms = $bindable({}),
+		labels,
+		newLayers = [],
+		layerPaint = $bindable({}),
+		layerWarnings = [],
+		newGroupChanges = 0,
 	}: {
 		options: VectorState;
 		defaults: VectorState;
@@ -73,6 +80,16 @@
 		colorRelief?: ColorRelief;
 		/** The hillshade's zooms and intensity at max zoom. */
 		hillshadeZooms?: ZoomRamp;
+		/** Names of layer groups by path, from a basemap's layer mapping. */
+		labels?: Record<string, string>;
+		/** The style layers a basemap's layer mapping adds, whose paint the groups' ⓘ edits. */
+		newLayers?: NewStyleLayer[];
+		/** The paint of those layers, by id. */
+		layerPaint?: LayerPaint;
+		/** What the layer mapping warns of: one line atop the Layers section. */
+		layerWarnings?: string[];
+		/** How many of the mapping's new groups differ from their default. */
+		newGroupChanges?: number;
 	} = $props();
 
 	const changes = (...paths: string[]) => configChangeCount(config, paths);
@@ -96,6 +113,7 @@
 		for (const path of Object.keys(zooms)) delete zooms[path];
 		for (const path of Object.keys(roles)) delete roles[path];
 		overChart = [...DEFAULT_OVER_CHART];
+		layerPaint = {};
 	}
 	function resetElevation() {
 		options.features.terrain = defaults.features.terrain;
@@ -118,8 +136,19 @@
 	changes={changes('layers', 'features.buildings', 'features.landcover') +
 		Object.keys(zooms).length +
 		(rolesShown ? Object.keys(roles).length : 0) +
-		overChartChanges(overChart)}
+		overChartChanges(overChart) +
+		newGroupChanges +
+		Object.keys(layerPaint).length}
 >
+	{#if layerWarnings.length > 0}
+		<div class="entry">
+			<p class="warning layer-warnings" role="note" title={layerWarnings.join('\n')}>
+				⚠ {layerWarnings.length === 1
+					? layerWarnings[0]
+					: `${layerWarnings.length} layer mapping warnings: ${layerWarnings[0]} …`}
+			</p>
+		</div>
+	{/if}
 	<InputCheckbox
 		label="3D buildings"
 		hint="Draw buildings as blocks of their height. They show once the map is tilted. To tilt the map, drag with the right mouse button or Ctrl + drag; on a touch screen, drag up or down with two fingers."
@@ -150,6 +179,9 @@
 		{rolesShown}
 		{roleState}
 		bind:overChart
+		{labels}
+		{newLayers}
+		bind:layerPaint
 	/>
 </SidebarSection>
 <h4 class="section-group">Appearance</h4>

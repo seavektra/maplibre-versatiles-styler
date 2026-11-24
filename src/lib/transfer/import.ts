@@ -25,6 +25,14 @@ import {
 	type StyleKey,
 } from '../style/config';
 import { parseSources, type ChosenSources } from '../style/sources';
+import {
+	METADATA_LAYER_PAINT_KEY,
+	METADATA_NEW_GROUPS_KEY,
+	parseLayerPaint,
+	parseNewGroupValues,
+	type LayerPaint,
+	type NewGroupValue,
+} from '../style/basemap';
 
 /** What the pasted text turned out to be. Shown to the user, so they learn what the tool accepts. */
 export type ImportKind =
@@ -76,6 +84,10 @@ export interface ImportResult {
 	colorRelief?: ColorRelief;
 	/** The hillshade's zooms and intensity at max zoom, as for `colorRelief`. */
 	hillshadeZooms?: ZoomRamp;
+	/** The paint of a basemap mapping's new style layers, as for `layerZooms`. */
+	layerPaint?: LayerPaint;
+	/** The settings of a basemap mapping's new groups, by path, as for `layerZooms`. */
+	newGroups?: Record<string, NewGroupValue>;
 }
 
 /** The exact paths report nothing: there was nothing to reconstruct. */
@@ -206,6 +218,8 @@ function parseLink(text: string): ImportOutcome | undefined {
 	const chart = decodeConfig(params.get('chart') ?? '');
 	const relief = parseColorRelief(decodeConfig(params.get('relief') ?? ''));
 	const shade = parseZoomRamp(decodeConfig(params.get('shade') ?? ''));
+	const paint = parseLayerPaint(decodeConfig(params.get('paint') ?? ''));
+	const groups = parseNewGroupValues(decodeConfig(params.get('groups') ?? ''));
 	if (encoded && config === null) {
 		return {
 			ok: false,
@@ -226,6 +240,8 @@ function parseLink(text: string): ImportOutcome | undefined {
 			...(chart ? { overChart: parseOverChart(chart.over) } : {}),
 			...(relief ? { colorRelief: relief } : {}),
 			...(isEmptyRamp(shade) ? {} : { hillshadeZooms: shade }),
+			...(Object.keys(paint).length > 0 ? { layerPaint: paint } : {}),
+			...(Object.keys(groups).length > 0 ? { newGroups: groups } : {}),
 		},
 	};
 }
@@ -302,7 +318,13 @@ function layerSettingsOf(
 	style: StyleSpecification
 ): Pick<
 	ImportResult,
-	'layerZooms' | 'layerRoles' | 'overChart' | 'colorRelief' | 'hillshadeZooms'
+	| 'layerZooms'
+	| 'layerRoles'
+	| 'overChart'
+	| 'colorRelief'
+	| 'hillshadeZooms'
+	| 'layerPaint'
+	| 'newGroups'
 > {
 	const metadata = style.metadata as Record<string, unknown> | undefined;
 	const layerZooms = parseLayerZooms(metadata?.[METADATA_ZOOMS_KEY]);
@@ -310,6 +332,8 @@ function layerSettingsOf(
 	const chart = metadata?.[METADATA_CHART_KEY];
 	const relief = parseColorRelief(metadata?.[METADATA_RELIEF_KEY]);
 	const shade = parseZoomRamp(metadata?.[METADATA_HILLSHADE_KEY]);
+	const paint = parseLayerPaint(metadata?.[METADATA_LAYER_PAINT_KEY]);
+	const groups = parseNewGroupValues(metadata?.[METADATA_NEW_GROUPS_KEY]);
 	return {
 		...(Object.keys(layerZooms).length > 0 ? { layerZooms } : {}),
 		...(Object.keys(layerRoles).length > 0 ? { layerRoles } : {}),
@@ -318,6 +342,8 @@ function layerSettingsOf(
 			: {}),
 		...(relief ? { colorRelief: relief } : {}),
 		...(isEmptyRamp(shade) ? {} : { hillshadeZooms: shade }),
+		...(Object.keys(paint).length > 0 ? { layerPaint: paint } : {}),
+		...(Object.keys(groups).length > 0 ? { newGroups: groups } : {}),
 	};
 }
 

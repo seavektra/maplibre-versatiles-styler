@@ -24,6 +24,7 @@
 	import type { SelectOption } from '../inputs/select';
 	import {
 		groupLayerSummaries,
+		layerIdsOfGroup,
 		MAX_ZOOM,
 		MIN_ZOOM,
 		type LayerZooms,
@@ -34,6 +35,13 @@
 	import { groupWarnings, type RoleStatus } from '../../style/role_status';
 	import { offlineLayerId } from '../../style/online';
 	import { belowChartAnchor, DEFAULT_OVER_CHART } from '../../style/chart_anchor';
+	import { DEFAULT_NEW_LAYER_PAINT, type NewStyleLayer } from '../../style/layer_mapping';
+	import {
+		PAINT_FIELDS,
+		parseLayerPaint,
+		type LayerPaint,
+		type NewLayerStyle,
+	} from '../../style/basemap';
 
 	let {
 		layers = $bindable(),
@@ -47,6 +55,9 @@
 		rolesShown = false,
 		roleState,
 		overChart = $bindable(),
+		labels,
+		newLayers = [],
+		layerPaint = $bindable(),
 		disabled = false,
 	}: {
 		layers: ResolvedLayerGroups;
@@ -69,6 +80,12 @@
 		roleState?: RoleStatus;
 		/** The groups drawn over the chart; left out, the groups have no Over chart checkbox. */
 		overChart?: string[];
+		/** Names of groups by path, over the styler's own: a basemap's layer mapping sets them. */
+		labels?: Record<string, string>;
+		/** The style layers a basemap's layer mapping adds: the ⓘ of their group edits their paint. */
+		newLayers?: NewStyleLayer[];
+		/** The paint of those layers, by id; left out, there is nothing to edit. */
+		layerPaint?: LayerPaint;
 		disabled?: boolean;
 	} = $props();
 
@@ -86,6 +103,7 @@
 	function resetGroupSettings(id: string) {
 		if (zooms) for (const path of Object.keys(zooms)) if (under(path, id)) delete zooms[path];
 		if (roles) for (const path of Object.keys(roles)) if (under(path, id)) delete roles[path];
+		if (layerPaint) for (const layer of newLayersOf(id)) delete layerPaint[layer.id];
 		if (overChart)
 			overChart = [
 				...overChart.filter((path) => !under(path, id)),
@@ -93,7 +111,46 @@
 			];
 	}
 
-	let nodes = $derived(layerNodes(layerGroups, defaults));
+	let nodes = $derived(layerNodes(layerGroups, defaults, labels));
+
+	/** The new style layers of the group at `id` and the groups under it. */
+	function newLayersOf(id: string): NewStyleLayer[] {
+		const ids = new Set(layerIdsOfGroup(layerGroups, id));
+		return newLayers.filter((layer) => ids.has(layer.id));
+	}
+
+	/** What a new layer is drawn with where its paint sets nothing: its type's default. */
+	function defaultPaint(layer: NewStyleLayer): Required<Omit<NewLayerStyle, 'dash'>> {
+		const paint = DEFAULT_NEW_LAYER_PAINT[layer.type];
+		return {
+			color: paint[`${layer.type}-color`] as string,
+			opacity: (paint[`${layer.type}-opacity`] as number | undefined) ?? 1,
+			width: (paint['line-width'] as number | undefined) ?? 1,
+			radius: (paint['circle-radius'] as number | undefined) ?? 3,
+		};
+	}
+
+	/** Sets one field of a new layer's paint; `undefined` takes it back to the default. */
+	function setPaint<K extends keyof NewLayerStyle>(
+		id: string,
+		field: K,
+		value: NewLayerStyle[K] | undefined
+	) {
+		if (!layerPaint) return;
+		const style = { ...layerPaint[id] };
+		if (value === undefined) delete style[field];
+		else style[field] = value;
+		// Read back as stored paint is: a width or radius not below 0, an opacity within 0–1.
+		const sound = parseLayerPaint({ [id]: style })[id];
+		if (sound === undefined) delete layerPaint[id];
+		else layerPaint[id] = sound;
+	}
+
+	const numberOf = (e: Event) => {
+		const text = (e.target as HTMLInputElement).value.trim();
+		const value = Number(text);
+		return text === '' || !Number.isFinite(value) ? undefined : value;
+	};
 	let expanded = $state<Record<string, boolean>>({});
 
 	// Symbols, as three words do not fit a row this deep in the tree.
@@ -255,8 +312,11 @@
 		? groupLayerSummaries({ layers: styleLayers }, layerGroups, id, offlineLayerId)
 		: []}
 	{@const sources = rolesShown ? roleState?.roles : undefined}
-	{#if summaries.length === 0}
+	{@const added = layerPaint ? newLayersOf(id) : []}
+	{#if summaries.length === 0 && added.length === 0}
 		<span>No layers of this group are in the style.</span>
+	{:else if summaries.length === 0}
+		<span>No layers of this group are drawn.</span>
 	{:else}
 		<table class="group-info">
 			<thead
@@ -275,6 +335,87 @@
 						<td>{layer.fade ? `${layer.fade[0]}→${layer.fade[1]}` : '—'}</td>
 						<td>{tiles ? `${tiles.min}–${tiles.max}` : '—'}</td>
 						{#if sources}<td>{sources[offlineLayerId(layer.id)] ?? '—'}</td>{/if}
+					</tr>
+				{/each}
+			</tbody>
+		</table>
+	{/if}
+	{#if added.length > 0}
+		<!-- The paint of the layers the basemap adds, which no theme colours: plain fields, as this is a tooltip. -->
+		<table class="group-info new-layer-paint">
+			<thead
+				><tr
+					><th>New layer</th><th>Colour</th><th>Width / radius</th><th>Opacity</th><th>Dash</th></tr
+				></thead
+			>
+			<tbody>
+				{#each added as layer (layer.id)}
+					{@const fields = PAINT_FIELDS[layer.type]}
+					{@const paint = layerPaint?.[layer.id] ?? {}}
+					{@const usual = defaultPaint(layer)}
+					<tr>
+						<td>{layer.id}</td>
+						<td
+							><input
+								type="color"
+								aria-label="Colour of {layer.id}"
+								{disabled}
+								value={paint.color ?? usual.color}
+								onchange={(e) => setPaint(layer.id, 'color', (e.target as HTMLInputElement).value)}
+							/></td
+						>
+						<td>
+							{#if fields.includes('width') || fields.includes('radius')}
+								{@const field = fields.includes('width') ? 'width' : 'radius'}
+								<input
+									type="number"
+									aria-label="{field === 'width' ? 'Width' : 'Radius'} of {layer.id}"
+									{disabled}
+									min="0"
+									step="0.5"
+									value={paint[field] ?? usual[field]}
+									onchange={(e) => setPaint(layer.id, field, numberOf(e))}
+								/>
+							{/if}
+						</td>
+						<td
+							><input
+								type="number"
+								aria-label="Opacity of {layer.id}"
+								{disabled}
+								min="0"
+								max="1"
+								step="0.05"
+								value={paint.opacity ?? usual.opacity}
+								onchange={(e) => {
+									const value = numberOf(e);
+									setPaint(
+										layer.id,
+										'opacity',
+										value === undefined ? undefined : Math.min(1, Math.max(0, value))
+									);
+								}}
+							/></td
+						>
+						<td>
+							{#if fields.includes('dash')}
+								<input
+									type="text"
+									aria-label="Dash pattern of {layer.id}"
+									placeholder="solid"
+									{disabled}
+									value={paint.dash ? formatDashPattern(paint.dash) : ''}
+									onchange={(e) => {
+										const text = (e.target as HTMLInputElement).value;
+										setPaint(
+											layer.id,
+											'dash',
+											text.trim() === '' ? undefined : parseDashPattern(text)
+										);
+									}}
+								/>
+							{/if}
+						</td>
 					</tr>
 				{/each}
 			</tbody>

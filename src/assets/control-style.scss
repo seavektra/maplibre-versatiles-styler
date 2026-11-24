@@ -454,6 +454,27 @@ $chevron-down: "%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E
 		&:hover {
 			text-decoration: underline;
 		}
+
+		&:disabled {
+			color: var(--muted);
+			cursor: default;
+			text-decoration: none;
+		}
+	}
+
+	// The header of a styler bound to a basemap: its state has changes it has not saved.
+	.unsaved-dot {
+		margin-left: 6px;
+		font-size: 10px;
+		vertical-align: middle;
+		color: var(--accent);
+	}
+
+	// What a basemap's layer mapping warns of: one line, every warning in its tooltip.
+	.layer-warnings {
+		overflow: hidden;
+		white-space: nowrap;
+		text-overflow: ellipsis;
 	}
 
 	.primary-button {
@@ -1412,6 +1433,21 @@ $chevron-down: "%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E
 					font-family: var(--font-mono);
 					white-space: nowrap;
 				}
+			}
+		}
+
+		// The paint of a basemap's new style layers: small plain fields in the table.
+		.new-layer-paint {
+			margin-top: 6px;
+
+			input {
+				width: 5em;
+				font: inherit;
+			}
+
+			input[type='color'] {
+				width: 2.5em;
+				padding: 0;
 			}
 		}
 
