@@ -3149,6 +3149,11 @@ $chevron-down: "%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E
 		font-family: inherit;
 	}
 
+	.zoom-chip-online {
+		background: var(--accent-soft);
+		color: var(--accent);
+	}
+
 	.tile-layers {
 		width: 100%;
 		margin: 8px 0;

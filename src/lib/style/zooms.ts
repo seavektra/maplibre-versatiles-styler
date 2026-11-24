@@ -178,19 +178,22 @@ interface VectorTileZooms {
 
 /**
  * The zooms each tile layer is in the tiles at, by its name: its own zooms within the tileset's. Above
- * `max` the map still draws it, from the tiles of `max` scaled up.
+ * `max` the map still draws it, from the tiles of `max` scaled up. A tile layer whose own zooms start
+ * above the tileset's last zoom (a tileset cut at z8 that lists piers from z12) is in no tile and is
+ * left out.
  */
 export function tileLayerZooms(tileJSON: VectorTileZooms): Record<string, ZoomSpan> {
 	const tilesMin = tileJSON.minzoom ?? MIN_ZOOM;
 	const tilesMax = tileJSON.maxzoom ?? MAX_ZOOM;
 	return Object.fromEntries(
-		(tileJSON.vector_layers ?? []).map((layer) => [
-			layer.id,
-			{
+		(tileJSON.vector_layers ?? [])
+			.map((layer) => ({
+				id: layer.id,
 				min: Math.max(tilesMin, layer.minzoom ?? tilesMin),
 				max: Math.min(tilesMax, layer.maxzoom ?? tilesMax),
-			},
-		])
+			}))
+			.filter((span) => span.min <= span.max)
+			.map(({ id, min, max }) => [id, { min, max }])
 	);
 }
 
