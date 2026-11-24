@@ -135,7 +135,8 @@
 					app's Open Sans, and the app provides glyphs and icons. Chart layers go after the
 					<code>seavektra-chart</code>
 					layer; set the global state
-					<code>online</code> to false when there is no network.
+					<code>online</code> to false when there is no network. The records Import reads are left out
+					of the metadata, so import the plain style.json to restore the styler.
 				</p>
 				{#if online}
 					<p class="dialog-note">

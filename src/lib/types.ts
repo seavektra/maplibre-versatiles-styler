@@ -27,6 +27,8 @@ export interface BasemapConfig {
 	state: unknown;
 	/** Saves the current state. The header shows the state as saved once it resolves. */
 	onsave(state: BasemapState): Promise<void>;
+	/** Where the map opens, `[longitude, latitude]` and a zoom; the tileset's bounds by default. */
+	view?: { center: [number, number]; zoom: number };
 }
 
 export interface VersaTilesStylerConfig {

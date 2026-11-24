@@ -1,5 +1,15 @@
 import type { StyleSpecification } from 'maplibre-gl';
 import { baseMapSourceId, onlineSplit } from '../style/online';
+import { METADATA_SOURCES_KEY } from '../style/config';
+import { METADATA_ZOOMS_KEY } from '../style/zooms';
+import { METADATA_ROLES_KEY } from '../style/roles';
+import { METADATA_RELIEF_KEY } from '../style/color_relief';
+import { METADATA_HILLSHADE_KEY } from '../style/zoom_ramp';
+import {
+	METADATA_BASEMAP_KEY,
+	METADATA_LAYER_PAINT_KEY,
+	METADATA_NEW_GROUPS_KEY,
+} from '../style/basemap';
 
 /**
  * The placeholder the SeaVektra app replaces with the `pmtiles://` URL of the base map archive it
@@ -21,6 +31,22 @@ const APP_FONTS = {
 	light: 'Open Sans Light',
 } as const;
 
+/**
+ * The metadata kept only so that Import can fill the styler's fields again. What they set is in the
+ * layers already, and MapLibre never reads `metadata`, so the app style leaves them out.
+ */
+const IMPORT_RECORDS: readonly string[] = [
+	'versatiles:options',
+	METADATA_SOURCES_KEY,
+	METADATA_ZOOMS_KEY,
+	METADATA_ROLES_KEY,
+	METADATA_RELIEF_KEY,
+	METADATA_HILLSHADE_KEY,
+	METADATA_BASEMAP_KEY,
+	METADATA_LAYER_PAINT_KEY,
+	METADATA_NEW_GROUPS_KEY,
+];
+
 type Source = StyleSpecification['sources'][string];
 type Layer = StyleSpecification['layers'][number];
 
@@ -39,8 +65,9 @@ type Layer = StyleSpecification['layers'][number];
  *   base map's are. A `terrain` whose source is not kept goes too.
  * - Every other source (land cover, satellite) and the layers that draw from it are left out.
  * - The `seavektra-chart` anchor layer (it has no source), the root `state` (`online`), the `-overlap`
- *   and `-fallback` copies (their offline source keeps its id, so its url is the placeholder) and the
- *   `seavektra:*` metadata are kept as they are.
+ *   and `-fallback` copies (their offline source keeps its id, so its url is the placeholder) are kept
+ *   as they are, and so is the metadata the app may read (`seavektra:online`, `seavektra:chart`).
+ *   The records kept only for Import ({@link IMPORT_RECORDS}) are left out.
  * - Label fonts become the app's Open Sans of the same weight or style.
  * - `glyphs` and `sprite` are left out: the app's own style provides both.
  */
@@ -48,7 +75,10 @@ export function appStyle(style: StyleSpecification): StyleSpecification {
 	const split = onlineSplit(style);
 	const sourceId = split?.offline ?? baseMapSourceId(style);
 	const onlineId = split && style.sources[split.online] ? split.online : undefined;
-	const { glyphs: _glyphs, sprite: _sprite, terrain, ...rest } = style;
+	const { glyphs: _glyphs, sprite: _sprite, terrain, metadata, ...rest } = style;
+	const kept = Object.entries((metadata ?? {}) as Record<string, unknown>).filter(
+		([key]) => !IMPORT_RECORDS.includes(key)
+	);
 	const sources: Record<string, Source> = {};
 	if (sourceId !== undefined) {
 		const source = style.sources[sourceId] as { attribution?: string };
@@ -74,6 +104,7 @@ export function appStyle(style: StyleSpecification): StyleSpecification {
 		.map(withAppFonts);
 	return {
 		...rest,
+		...(kept.length > 0 ? { metadata: Object.fromEntries(kept) } : {}),
 		...(terrain && terrain.source in sources ? { terrain } : {}),
 		sources,
 		layers,

@@ -25,7 +25,7 @@
 	} from '../style/layer_mapping';
 	import { archiveSources, loadSources, type LoadedTileJSON } from '../style/sources';
 	import { layerNodes, type LayerNode } from '../options/layers';
-	import { layerIdsOfGroup } from '../style/zooms';
+	import { layerIdsOfGroup, tileLayerZooms } from '../style/zooms';
 	import type { BasemapFile } from '../types';
 	import {
 		draftOfRow,
@@ -152,9 +152,20 @@
 	let leafPaths = $derived(leavesOf(nodes).map((node) => node.path.join('.')));
 	let newLayers = $derived(new Map(mapping.newLayers.map((layer) => [layer.id, layer] as const)));
 	let tileLayers = $derived(tileLayerNames(tileJSON));
+	/** Where the tileset has each tile layer, by its name. */
+	let tileZooms = $derived(tileJSON ? tileLayerZooms(tileJSON) : {});
+
+	/** A tile layer's zooms in the tileset, as `z0–14`; `undefined` when the tileset lacks it. */
+	function zoomText(tileLayer: string | undefined): string | undefined {
+		const span = tileLayer === undefined ? undefined : tileZooms[tileLayer];
+		if (!span) return undefined;
+		return span.min === span.max ? `z${span.min}` : `z${span.min}–${span.max}`;
+	}
 
 	let tab = $state<'groups' | 'json'>('groups');
 	let selected = $state<string | undefined>();
+	/** Whether the details column shows the tileset's tile layers instead of a group. */
+	let showTiles = $state(false);
 	let selectedNode = $derived(selected === undefined ? undefined : nodeOf(nodes, selected));
 
 	// ── Reading the tree ─────────────────────────────────────────────────────────
@@ -219,6 +230,26 @@
 		...(themeStyle?.layers.map((layer) => layer.id) ?? []).filter((id) => currentGroupOf(id)),
 		...mapping.newLayers.map((layer) => layer.id),
 	]);
+
+	/** Every tile layer of the tileset, with its zooms, its fields and the style layers reading it. */
+	let tileLayerRows = $derived(
+		(tileJSON && 'vector_layers' in tileJSON && Array.isArray(tileJSON.vector_layers)
+			? tileJSON.vector_layers
+			: []
+		).map((layer) => ({
+			name: layer.id,
+			zooms: zoomText(layer.id) ?? '–',
+			fields: Object.keys(layer.fields ?? {}).length,
+			styleLayers: allLayers.filter((id) => tileLayerOf(id) === layer.id).length,
+		}))
+	);
+	/** Style layers reading a tile layer the tileset does not have. */
+	let missingTileLayers = $derived(
+		allLayers.filter((id) => {
+			const read = tileLayerOf(id);
+			return read !== undefined && !owns(tileZooms, read);
+		})
+	);
 
 	function groupTags(path: string): string[] {
 		if (!applied) return [];
@@ -287,7 +318,46 @@
 
 	function select(path: string) {
 		selected = path;
+		showTiles = false;
 		panel = undefined;
+		expandTo(path);
+	}
+
+	// ── Collapsing the tree ──────────────────────────────────────────────────────
+	/** Paths of the groups whose sub-groups are on show; every group starts collapsed. */
+	let expanded = $state<Record<string, boolean>>({});
+
+	function branchPaths(list: readonly LayerNode[]): string[] {
+		return list.flatMap((node) =>
+			node.children.length === 0 ? [] : [node.path.join('.'), ...branchPaths(node.children)]
+		);
+	}
+
+	function toggleExpanded(path: string) {
+		expanded = { ...expanded, [path]: !expanded[path] };
+	}
+
+	function collapseAll() {
+		expanded = {};
+	}
+
+	function expandAll() {
+		expanded = Object.fromEntries(branchPaths(nodes).map((path) => [path, true]));
+	}
+
+	/** Expands the groups above `path`, so a selected group is on show. */
+	function expandTo(path: string) {
+		const keys = path.split('.');
+		const next = { ...expanded };
+		let changed = false;
+		for (let i = 1; i < keys.length; i++) {
+			const parent = keys.slice(0, i).join('.');
+			if (!next[parent]) {
+				next[parent] = true;
+				changed = true;
+			}
+		}
+		if (changed) expanded = next;
 	}
 
 	function draftsOf(filter: unknown): RowDraft[] | undefined {
@@ -362,12 +432,23 @@
 	}
 
 	/** Paths a new group can go under: the top level and every group with sub-groups. */
+	/**
+	 * Whether a group can take a sub-group: it has sub-groups already, or it is a new group with no
+	 * style layers (a group holds either style layers or sub-groups).
+	 */
+	function canHoldGroups(node: LayerNode): boolean {
+		if (node.children.length > 0) return true;
+		const path = node.path.join('.');
+		return mapping.groups.some((group) => group.path === path) && layersOf(path).length === 0;
+	}
+
 	let parentPaths = $derived([
 		'',
 		...(function parents(list: readonly LayerNode[]): string[] {
-			return list.flatMap((node) =>
-				node.children.length === 0 ? [] : [node.path.join('.'), ...parents(node.children)]
-			);
+			return list.flatMap((node) => [
+				...(canHoldGroups(node) ? [node.path.join('.')] : []),
+				...parents(node.children),
+			]);
 		})(nodes),
 	]);
 
@@ -530,6 +611,19 @@
 	{:else}
 		<div class="mapping-columns">
 			<nav class="mapping-tree" aria-label="Style groups">
+				<div class="tree-toolbar">
+					<button type="button" class="text-button" onclick={expandAll}>Expand all</button>
+					<button type="button" class="text-button" onclick={collapseAll}>Collapse all</button>
+					<button
+						type="button"
+						class="text-button tree-tiles"
+						aria-current={showTiles ? 'true' : undefined}
+						onclick={() => {
+							showTiles = true;
+							panel = undefined;
+						}}>Tile layers</button
+					>
+				</div>
 				<ul>
 					{@render tree(nodes)}
 				</ul>
@@ -540,6 +634,8 @@
 			<section class="mapping-details" aria-label="Group details">
 				{#if panel?.kind === 'newGroup'}
 					{@render newGroupForm(panel)}
+				{:else if showTiles}
+					{@render tileLayersView()}
 				{:else if !selectedNode}
 					<p class="mapping-hint">Pick a group to see its style layers and edit it.</p>
 				{:else}
@@ -559,19 +655,33 @@
 {#snippet tree(list: readonly LayerNode[])}
 	{#each list as node (node.path.join('.'))}
 		{@const path = node.path.join('.')}
+		{@const branch = node.children.length > 0}
 		<li>
-			<button
-				type="button"
-				class="tree-group"
-				aria-current={selected === path ? 'true' : undefined}
-				onclick={() => select(path)}
-			>
-				<span class="tree-label">{node.label}</span>
-				{#if node.children.length === 0}
-					<span class="tree-count">{layersOf(path).length}</span>
+			<div class="tree-row">
+				{#if branch}
+					<button
+						type="button"
+						class="tree-toggle"
+						aria-expanded={!!expanded[path]}
+						aria-label={`${expanded[path] ? 'Collapse' : 'Expand'} ${node.label}`}
+						onclick={() => toggleExpanded(path)}>{expanded[path] ? '▾' : '▸'}</button
+					>
+				{:else}
+					<span class="tree-toggle-space"></span>
 				{/if}
-				{@render tags(groupTags(path))}
-			</button>
+				<button
+					type="button"
+					class="tree-group"
+					aria-current={selected === path ? 'true' : undefined}
+					onclick={() => select(path)}
+				>
+					<span class="tree-label">{node.label}</span>
+					{#if node.children.length === 0}
+						<span class="tree-count">{layersOf(path).length}</span>
+					{/if}
+					{@render tags(groupTags(path))}
+				</button>
+			</div>
 			{#each mergedInto(path) as source (source)}
 				<div class="tree-merged">
 					merged: {labelOf(source)}
@@ -582,13 +692,64 @@
 					>
 				</div>
 			{/each}
-			{#if node.children.length > 0}
+			{#if branch && expanded[path]}
 				<ul>
 					{@render tree(node.children)}
 				</ul>
 			{/if}
 		</li>
 	{/each}
+{/snippet}
+
+{#snippet zoomChip(tileLayer: string | undefined)}
+	{@const text = zoomText(tileLayer)}
+	{#if text}
+		<span class="zoom-chip" title="Zooms the tileset has this tile layer at">{text}</span>
+	{:else if tileLayer !== undefined && tileJSON}
+		<span class="zoom-chip zoom-chip-missing" title="The tileset has no such tile layer"
+			>not in tileset</span
+		>
+	{/if}
+{/snippet}
+
+{#snippet tileLayersView()}
+	<header class="details-header">
+		<h3>Tile layers</h3>
+		<span class="details-path">in {tileset.name}</span>
+	</header>
+	{#if tileLayerRows.length === 0}
+		<p class="mapping-hint">The tileset lists no tile layers.</p>
+	{:else}
+		<table class="tile-layers">
+			<thead>
+				<tr><th>Tile layer</th><th>Zooms</th><th>Fields</th><th>Style layers</th></tr>
+			</thead>
+			<tbody>
+				{#each tileLayerRows as row (row.name)}
+					<tr>
+						<td><code>{row.name}</code></td>
+						<td class="tile-zooms">{row.zooms}</td>
+						<td>{row.fields}</td>
+						<td>{row.styleLayers}</td>
+					</tr>
+				{/each}
+			</tbody>
+		</table>
+	{/if}
+	<p class="mapping-hint">
+		Zooms are where the tileset has the tile layer; above its last zoom the map scales that zoom's
+		tiles up. Style layers counts the style layers reading it.
+	</p>
+	{#if missingTileLayers.length > 0}
+		<h4>Reading a tile layer the tileset lacks</h4>
+		<ul class="details-layers">
+			{#each missingTileLayers as id (id)}
+				<li>
+					<code class="layer-id">{id}</code> <span class="layer-tile">{tileLayerOf(id)}</span>
+				</li>
+			{/each}
+		</ul>
+	{/if}
 {/snippet}
 
 {#snippet filterLine(filter: unknown, onreset: (() => void) | undefined)}
@@ -644,6 +805,11 @@
 			>
 			<button type="button" class="text-button" onclick={() => openNewLayer(path)}
 				>+ New style layer</button
+			>
+		{/if}
+		{#if canHoldGroups(node)}
+			<button type="button" class="text-button" onclick={() => openNewGroup(path)}
+				>+ Sub-group</button
 			>
 		{/if}
 		<button
@@ -702,6 +868,7 @@
 					<div class="layer-row">
 						<code class="layer-id">{id}</code>
 						<span class="layer-tile">{tileLayerOf(id) ?? '–'}</span>
+						{@render zoomChip(tileLayerOf(id))}
 						{@render tags(layerTags(id))}
 						<span class="layer-actions">
 							<button
@@ -887,12 +1054,18 @@
 				</label>
 				<label>
 					Tile layer
-					<input type="text" list="new-layer-tile-layers" bind:value={p.tileLayer} />
-					<datalist id="new-layer-tile-layers">
-						{#each tileLayers as name (name)}
-							<option value={name}></option>
-						{/each}
-					</datalist>
+					{#if tileLayers.length > 0}
+						<select bind:value={p.tileLayer}>
+							{#if !tileLayers.includes(p.tileLayer)}
+								<option value={p.tileLayer} disabled>{p.tileLayer || 'Pick a tile layer…'}</option>
+							{/if}
+							{#each tileLayers as name (name)}
+								<option value={name}>{name} ({zoomText(name) ?? '–'})</option>
+							{/each}
+						</select>
+					{:else}
+						<input type="text" bind:value={p.tileLayer} />
+					{/if}
 				</label>
 				<label>
 					After layer

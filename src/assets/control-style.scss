@@ -3117,6 +3117,85 @@ $chevron-down: "%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E
 		}
 	}
 
+	.tree-toolbar {
+		display: flex;
+		gap: 12px;
+		margin-bottom: 6px;
+	}
+
+	.tree-tiles {
+		margin-left: auto;
+		font-weight: 600;
+
+		&[aria-current='true'] {
+			padding: 0 6px;
+			border-radius: 6px;
+			background: var(--accent-soft);
+		}
+	}
+
+	.zoom-chip {
+		padding: 0 6px;
+		border-radius: 8px;
+		background: var(--sunken);
+		font-family: ui-monospace, monospace;
+		font-size: 11px;
+		line-height: 16px;
+		white-space: nowrap;
+	}
+
+	.zoom-chip-missing {
+		color: var(--warn);
+		font-family: inherit;
+	}
+
+	.tile-layers {
+		width: 100%;
+		margin: 8px 0;
+		border-collapse: collapse;
+		font-size: 12px;
+
+		th {
+			color: var(--muted);
+			font-weight: 600;
+			text-align: left;
+		}
+
+		th,
+		td {
+			padding: 4px 8px 4px 0;
+			border-bottom: 1px solid var(--line);
+		}
+
+		.tile-zooms {
+			font-family: ui-monospace, monospace;
+		}
+	}
+
+	.tree-row {
+		display: flex;
+		align-items: flex-start;
+	}
+
+	.tree-toggle,
+	.tree-toggle-space {
+		flex: none;
+		width: 18px;
+		padding: 3px 0;
+	}
+
+	.tree-toggle {
+		border: none;
+		background: none;
+		color: var(--muted);
+		font: inherit;
+		cursor: pointer;
+
+		&:hover {
+			color: inherit;
+		}
+	}
+
 	.tree-count {
 		color: var(--subtle);
 		font-size: 11px;

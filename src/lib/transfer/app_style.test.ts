@@ -125,7 +125,7 @@ describe('appStyle', () => {
 		]);
 		expect(style).not.toHaveProperty('glyphs');
 		expect(style).not.toHaveProperty('sprite');
-		expect(style.metadata).toEqual({ 'versatiles:options': {} });
+		expect(style).not.toHaveProperty('metadata');
 	});
 
 	it('maps the font stacks in an expression, not its operators or property names', () => {
@@ -234,7 +234,7 @@ describe('appStyle of a style with the chart anchor and the offline fallback', (
 		expect(layers.find((l) => l.id === CHART_ANCHOR_ID)).toMatchObject({ type: 'background' });
 	});
 
-	it('keeps the global state and the metadata the app reads', () => {
+	it('keeps the global state and the metadata the app reads, not the records for Import', () => {
 		const result = appStyle(prepared());
 		const source = prepared();
 		expect(result.state).toEqual({ online: { default: true } });
@@ -243,7 +243,8 @@ describe('appStyle of a style with the chart anchor and the offline fallback', (
 		expect(metadata[METADATA_CHART_KEY]).toEqual(
 			(source.metadata as Record<string, unknown>)[METADATA_CHART_KEY]
 		);
-		expect(metadata[METADATA_ROLES_KEY]).toEqual({ street: 'switch' });
+		expect(metadata).not.toHaveProperty(METADATA_ROLES_KEY);
+		expect(metadata).not.toHaveProperty('versatiles:options');
 	});
 
 	it('keeps the overlap and fallback layers on the base map source behind the placeholder', () => {

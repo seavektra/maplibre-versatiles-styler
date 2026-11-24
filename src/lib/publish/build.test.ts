@@ -322,10 +322,7 @@ describe('the published style', () => {
 		};
 		expect(JSON.stringify(country.filter)).toContain('maritime');
 		expect(style.layers.some((layer) => layer.id === 'seavektra-chart')).toBe(true);
-		expect((style.metadata as Record<string, unknown>)['seavektra:basemap']).toEqual({
-			name: 'North Sea',
-			mapping: MAPPING,
-		});
+		expect(style.metadata).not.toHaveProperty('seavektra:basemap');
 	});
 
 	it('draws hillshade and colour by height from the elevation, in the app form', () => {
@@ -351,17 +348,22 @@ describe('the published style', () => {
 		expect(style.layers.some((layer) => (layer.type as string) === 'color-relief')).toBe(true);
 	});
 
-	it('records only the new groups’ settings the styler records', () => {
-		const state = savedState({
-			groups: { 'boundaries.maritime': true, 'nowhere.else': 0.3 },
-		});
+	it('leaves out the records kept only for Import, but not the chart anchor’s', () => {
+		const state = savedState({ groups: { 'boundaries.maritime': false } });
 		const { style } = published(state, tiles);
 		expect(style).toEqual(stylerAppStyle(state, MAPPING, tiles));
-		expect((style.metadata as Record<string, unknown>)['seavektra:newGroups']).toBeUndefined();
-		const hidden = published(savedState({ groups: { 'boundaries.maritime': false } }), tiles);
-		expect((hidden.style.metadata as Record<string, unknown>)['seavektra:newGroups']).toEqual({
-			'boundaries.maritime': false,
-		});
+		const metadata = (style.metadata ?? {}) as Record<string, unknown>;
+		for (const key of [
+			'versatiles:options',
+			'versatiles:sources',
+			'seavektra:basemap',
+			'seavektra:layerPaint',
+			'seavektra:newGroups',
+			'seavektra:layerZooms',
+			'seavektra:layerRoles',
+		])
+			expect(metadata).not.toHaveProperty(key);
+		expect(metadata).toHaveProperty('seavektra:chart');
 	});
 
 	it('warns of an elevation it could not read, or that the basemap has none', () => {
