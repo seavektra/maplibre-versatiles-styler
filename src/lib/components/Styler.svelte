@@ -22,7 +22,6 @@
 		overlaySupported,
 		overlayDefaults,
 		probeSatelliteState,
-		probeVectorState,
 		styleCode,
 		styleForExport,
 		type StyleKey,
@@ -74,26 +73,15 @@
 		libraryConfigState,
 		parseBoundSourcesParam,
 		fileName,
-		buildMappedStyle,
 		newGroupValues,
-		parseLayerPaint,
-		parseNewGroupValues,
 		prepareBasemapMapping,
-		withBasemapMetadata,
 		withNewGroups,
 		withNewGroupValues,
 		type LayerPaint,
 		type NewGroupValue,
 	} from '../style/basemap';
 	import { parseLayerMapping } from '../style/layer_mapping';
-	import {
-		applyLayerZooms,
-		groupZoomDefaults,
-		METADATA_ZOOMS_KEY,
-		parseLayerZooms,
-		tileLayerZooms,
-		type LayerZooms,
-	} from '../style/zooms';
+	import { groupZoomDefaults, tileLayerZooms, type LayerZooms } from '../style/zooms';
 	import { provideFontPickerState } from './state/font_picker.svelte';
 	import { provideColorPickerState } from './state/color_picker.svelte';
 	import { labelTexts } from '../browser/map_labels';
@@ -104,33 +92,26 @@
 	import ThemeSelect from './ThemeSelect.svelte';
 	import ExportDialog from './ExportDialog.svelte';
 	import SourceOptions from './sections/SourceOptions.svelte';
-	import { ONLINE_STATE, splitByZoom } from '../style/online';
+	import { ONLINE_STATE } from '../style/online';
+	import { type LayerRoles } from '../style/roles';
+	import type { RoleStatus } from '../style/role_status';
+	import { DEFAULT_OVER_CHART, overChartChanges } from '../style/chart_anchor';
+	import { type ColorRelief } from '../style/color_relief';
+	import { isEmptyRamp, type ZoomRamp } from '../style/zoom_ramp';
 	import {
-		METADATA_ROLES_KEY,
-		parseLayerRoles,
-		rolesByLayer,
-		type LayerRoles,
-	} from '../style/roles';
-	import { roleStatus, type RoleStatus } from '../style/role_status';
+		buildStylerVectorStyle,
+		vectorExportStyle,
+		type StylerSettings,
+	} from '../style/pipeline';
 	import {
-		DEFAULT_OVER_CHART,
-		overChartChanges,
-		parseOverChart,
-		withChartAnchor,
-	} from '../style/chart_anchor';
-	import {
-		METADATA_RELIEF_KEY,
-		parseColorRelief,
-		withColorRelief,
-		type ColorRelief,
-	} from '../style/color_relief';
-	import {
-		METADATA_HILLSHADE_KEY,
-		isEmptyRamp,
-		parseZoomRamp,
-		withHillshadeRamp,
-		type ZoomRamp,
-	} from '../style/zoom_ramp';
+		chartFromParam,
+		newGroupsFromParam,
+		paintFromParam,
+		reliefFromParam,
+		rolesFromParam,
+		shadeFromParam,
+		zoomsFromParam,
+	} from '../transfer/layer_params';
 	import InspectPanel from './InspectPanel.svelte';
 	import { inspectClick, type InspectableMap, type InspectClick } from '../style/inspect_tiles';
 	import ImportDialog from './ImportDialog.svelte';
@@ -523,42 +504,32 @@
 		// A bound styler waits for its mapping, which waits for the tiles.
 		const mapping = basemapMapping;
 		if (basemap && !mapping) return undefined;
-		const groups = vectorGroups.layerGroups;
-		const build = (options: VectorState) =>
-			buildVectorStyle(
-				styleKey,
-				probeColors ? probeVectorState(options, probeColors) : options,
-				sourceConfig.assets,
-				stateSources
-			);
-		const zoomed = applyLayerZooms(
-			mapping
-				? buildMappedStyle(build, state, mapping, $state.snapshot(layerPaint) as LayerPaint)
-				: build(state),
-			$state.snapshot(layerZooms) as LayerZooms,
-			groups
-		);
-		let style = zoomed;
-		let roles: RoleStatus | undefined;
-		if (online && onlineTileJSON) {
-			const set = $state.snapshot(layerRoles) as LayerRoles;
-			style = splitByZoom(zoomed, onlineTileJSON, online.from, rolesByLayer(set, groups));
-			// The colour probes of the inspector ask for none of it.
-			if (!probeColors)
-				roles = roleStatus(
-					zoomed,
-					style,
-					set,
-					groups,
-					online.from,
-					stateSources.vector.maxzoom ?? online.from - 1
-				);
-		}
-		// The anchor is there with or without online tiles, so that every export marks where the chart goes.
-		style = withChartAnchor(style, $state.snapshot(overChart) as string[], groups);
-		style = withColorRelief(style, relief, stateSources.elevation);
-		style = withHillshadeRamp(style, $state.snapshot(hillshadeZooms) as ZoomRamp);
+		const { style, roles } = buildStylerVectorStyle({
+			styleKey,
+			state,
+			assets: sourceConfig.assets,
+			sources: stateSources,
+			groups: vectorGroups.layerGroups,
+			...(mapping ? { mapping } : {}),
+			...(online && onlineTileJSON
+				? { online: { tileJSON: onlineTileJSON, from: online.from } }
+				: {}),
+			settings: stylerSettings(),
+			...(probeColors ? { probeColors } : {}),
+		});
 		return { style, rendered: { styleKey, sources: sourceConfig, options: state }, roles };
+	}
+
+	/** The styler's own settings that go into the vector style, as they are now. */
+	function stylerSettings(): StylerSettings {
+		return {
+			layerZooms: $state.snapshot(layerZooms) as LayerZooms,
+			layerRoles: $state.snapshot(layerRoles) as LayerRoles,
+			overChart: $state.snapshot(overChart) as string[],
+			colorRelief: $state.snapshot(colorRelief) as ColorRelief,
+			hillshadeZooms: $state.snapshot(hillshadeZooms) as ZoomRamp,
+			layerPaint: $state.snapshot(layerPaint) as LayerPaint,
+		};
 	}
 
 	function styleSources(
@@ -834,34 +805,26 @@
 	let exportStyle = $derived.by(() => {
 		const current = currentStyle();
 		if (!current) return undefined;
-		const style = styleForExport(current.style, currentStyleKey, minimal, schema, {
-			provider,
-			config: sourceConfig,
-		});
-		// The ranges and roles are in the layers already, and the over-chart groups in the chart
-		// anchor's record; the records let Import restore the fields that set them.
-		const zooms = $state.snapshot(layerZooms) as LayerZooms;
-		const roles = $state.snapshot(layerRoles) as LayerRoles;
-		const relief = $state.snapshot(colorRelief) as ColorRelief;
-		const shade = $state.snapshot(hillshadeZooms) as ZoomRamp;
-		if (isSatellite) return style;
-		const recorded = {
-			...style,
-			metadata: {
-				...(style.metadata as object),
-				...(Object.keys(zooms).length > 0 ? { [METADATA_ZOOMS_KEY]: zooms } : {}),
-				...(Object.keys(roles).length > 0 ? { [METADATA_ROLES_KEY]: roles } : {}),
-				...(relief ? { [METADATA_RELIEF_KEY]: relief } : {}),
-				...(isEmptyRamp(shade) ? {} : { [METADATA_HILLSHADE_KEY]: shade }),
-			},
-		} as StyleSpecification;
-		if (!basemap || !basemapMapping) return recorded;
-		return withBasemapMetadata(recorded, {
-			name: basemap.name,
-			mapping: basemap.mapping,
-			mappingApplied: basemapMapping.applied,
-			paint: $state.snapshot(layerPaint) as LayerPaint,
-			newGroups,
+		const sources = { provider, config: sourceConfig };
+		if (isSatellite) {
+			return styleForExport(current.style, currentStyleKey, minimal, schema, sources);
+		}
+		return vectorExportStyle(current.style, {
+			styleKey: currentStyleKey as Palette,
+			minimal,
+			schema,
+			sources,
+			settings: stylerSettings(),
+			...(basemap && basemapMapping
+				? {
+						basemap: {
+							name: basemap.name,
+							mapping: basemap.mapping,
+							applied: basemapMapping.applied,
+							newGroups,
+						},
+					}
+				: {}),
 		});
 	});
 
@@ -930,20 +893,6 @@
 		}));
 	}
 
-	function zoomsFromHash(encoded: string | null | undefined): LayerZooms {
-		return encoded ? parseLayerZooms(decodeConfig(encoded)) : {};
-	}
-
-	function rolesFromHash(encoded: string | null | undefined): LayerRoles {
-		return encoded ? parseLayerRoles(decodeConfig(encoded)) : {};
-	}
-
-	/** The over-chart groups a link names as `{ over }`; the default where it names none. */
-	function chartFromHash(encoded: string | null | undefined): string[] {
-		const chart = encoded ? decodeConfig(encoded) : null;
-		return chart ? parseOverChart(chart.over) : [...DEFAULT_OVER_CHART];
-	}
-
 	/** Sets the new groups' settings, or keeps them until the mapping is there. */
 	function applyNewGroups(values: Record<string, NewGroupValue>) {
 		if (basemapMapping) {
@@ -961,22 +910,13 @@
 		if (param === 'paint' || param === 'groups') {
 			if (!basemap) return;
 		}
-		if (param === 'paint') layerPaint = encoded ? parseLayerPaint(decodeConfig(encoded)) : {};
-		else if (param === 'groups') {
-			applyNewGroups(encoded ? parseNewGroupValues(decodeConfig(encoded)) : {});
-		} else if (param === 'zooms') layerZooms = zoomsFromHash(encoded);
-		else if (param === 'roles') layerRoles = rolesFromHash(encoded);
-		else if (param === 'relief') colorRelief = reliefFromHash(encoded);
-		else if (param === 'shade') hillshadeZooms = shadeFromHash(encoded);
-		else overChart = chartFromHash(encoded);
-	}
-
-	function shadeFromHash(encoded: string | null | undefined): ZoomRamp {
-		return encoded ? parseZoomRamp(decodeConfig(encoded)) : {};
-	}
-
-	function reliefFromHash(encoded: string | null | undefined): ColorRelief {
-		return encoded ? parseColorRelief(decodeConfig(encoded)) : false;
+		if (param === 'paint') layerPaint = paintFromParam(encoded);
+		else if (param === 'groups') applyNewGroups(newGroupsFromParam(encoded));
+		else if (param === 'zooms') layerZooms = zoomsFromParam(encoded);
+		else if (param === 'roles') layerRoles = rolesFromParam(encoded);
+		else if (param === 'relief') colorRelief = reliefFromParam(encoded);
+		else if (param === 'shade') hillshadeZooms = shadeFromParam(encoded);
+		else overChart = chartFromParam(encoded);
 	}
 
 	function sourcesFromHash(encoded: string | null | undefined): ChosenSources | undefined {
@@ -1074,11 +1014,11 @@
 							: undefined
 					);
 			const { styleKey, config: hashConfig, panelOpen, sources, layers } = hashManager.initialize();
-			layerZooms = zoomsFromHash(layers.zooms);
-			layerRoles = rolesFromHash(layers.roles);
-			overChart = chartFromHash(layers.chart);
-			colorRelief = reliefFromHash(layers.relief);
-			hillshadeZooms = shadeFromHash(layers.shade);
+			layerZooms = zoomsFromParam(layers.zooms);
+			layerRoles = rolesFromParam(layers.roles);
+			overChart = chartFromParam(layers.chart);
+			colorRelief = reliefFromParam(layers.relief);
+			hillshadeZooms = shadeFromParam(layers.shade);
 			applyLayerParam('paint', layers.paint);
 			applyLayerParam('groups', layers.groups);
 			if (panelOpen !== undefined) paneOpen = panelOpen;
