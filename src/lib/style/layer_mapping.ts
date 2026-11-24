@@ -597,7 +597,7 @@ function removeId(node: unknown, id: string): void {
 }
 
 /** The path of the leaf group whose list holds `id`, or `undefined`. */
-function groupOfLayer(groups: LayerGroupMap, id: string): string | undefined {
+export function groupOfLayer(groups: LayerGroupMap, id: string): string | undefined {
 	const visit = (node: unknown, path: string[]): string | undefined => {
 		if (Array.isArray(node)) return node.includes(id) ? path.join('.') : undefined;
 		if (!isRecord(node)) return undefined;
@@ -965,9 +965,11 @@ export function overlapWarnings(
 	return warnings;
 }
 
-interface Condition {
+/** One row of a row filter: a field compared with a value (see {@link rowConditions}). */
+export interface RowCondition {
 	field: string;
-	op: string;
+	op: '==' | '!=' | 'in' | 'has' | '!has';
+	/** A primitive for `==` and `!=`, a list of them for `in`, none for `has` and `!has`. */
 	value?: unknown;
 }
 
@@ -982,8 +984,8 @@ function partsOf(filter: unknown): unknown[] {
  * value — `["==" | "!=", ["get", f], v]`, `["in", ["get", f], ["literal", [...]]]`, `["has", f]` or
  * `["!", ["has", f]]`. `undefined` for any other filter.
  */
-function rowConditions(filter: unknown): Condition[] | undefined {
-	const conditions: Condition[] = [];
+export function rowConditions(filter: unknown): RowCondition[] | undefined {
+	const conditions: RowCondition[] = [];
 	for (const part of partsOf(filter)) {
 		const condition = conditionOf(part);
 		if (condition === undefined) return undefined;
@@ -992,16 +994,25 @@ function rowConditions(filter: unknown): Condition[] | undefined {
 	return conditions;
 }
 
-function conditionOf(part: unknown): Condition | undefined {
+function conditionOf(part: unknown): RowCondition | undefined {
 	if (!Array.isArray(part)) return undefined;
 	const [op, a, b] = part;
 	if ((op === '==' || op === '!=') && part.length === 3 && isPrimitive(b)) {
 		const field = fieldOf(a);
 		return field === undefined ? undefined : { field, op, value: b };
 	}
-	if (op === 'in' && part.length === 3 && Array.isArray(b) && b[0] === 'literal') {
+	if (
+		op === 'in' &&
+		part.length === 3 &&
+		Array.isArray(b) &&
+		b[0] === 'literal' &&
+		b.length === 2
+	) {
 		const field = fieldOf(a);
-		return field === undefined || !Array.isArray(b[1]) ? undefined : { field, op, value: b[1] };
+		const values = b[1];
+		return field === undefined || !Array.isArray(values) || !values.every(isPrimitive)
+			? undefined
+			: { field, op, value: values };
 	}
 	if (op === 'has' && part.length === 2 && typeof a === 'string') return { field: a, op };
 	if (op === '!' && part.length === 2 && Array.isArray(a) && a[0] === 'has') {
@@ -1015,7 +1026,7 @@ function isPrimitive(value: unknown): boolean {
 }
 
 /** Whatever conditions on one field a filter has, under its `all`s; other parts are skipped. */
-function conditionsOf(filter: unknown): Condition[] {
+function conditionsOf(filter: unknown): RowCondition[] {
 	return partsOf(filter)
 		.map(conditionOf)
 		.filter((condition) => condition !== undefined);
