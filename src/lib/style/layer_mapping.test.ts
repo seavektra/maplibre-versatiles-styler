@@ -166,9 +166,19 @@ describe('parseLayerMapping', () => {
 			labels: { 'land.forest': '' },
 			filters: { 'layer-a': 'not a filter' },
 			newLayers: [
-				{ id: 'n1', group: 'land', type: 'symbol', tileLayer: 'land' },
+				{ id: 'n1', group: 'land', type: 'heatmap', tileLayer: 'land' },
 				{ id: 'n2', group: 'land', type: 'fill' },
 				{ id: 'n3', group: 'land', type: 'fill', tileLayer: 'land', filter: 7 },
+				{ id: 'n4', group: 'land', type: 'symbol', tileLayer: 'land' },
+				{
+					id: 'n5',
+					group: 'land',
+					type: 'symbol',
+					tileLayer: 'land',
+					textField: 'ref',
+					fallbackField: 3,
+					placement: 'curve',
+				},
 			],
 			merges: 'nope',
 		});
@@ -179,6 +189,7 @@ describe('parseLayerMapping', () => {
 		expect(mapping.merges).toEqual({});
 		expect(mapping.newLayers).toEqual([
 			{ id: 'n3', group: 'land', type: 'fill', tileLayer: 'land' },
+			{ id: 'n5', group: 'land', type: 'symbol', tileLayer: 'land', textField: 'ref' },
 		]);
 		expect(warnings).toEqual([
 			'groups[0]: needs a dot-separated "path"',
@@ -187,9 +198,12 @@ describe('parseLayerMapping', () => {
 			'merges: not an object',
 			'labels["land.forest"]: not a text',
 			'filters["layer-a"]: not an expression filter',
-			'newLayers[0] "n1": "type" must be fill, line or circle',
+			'newLayers[0] "n1": "type" must be fill, line, circle or symbol',
 			'newLayers[1] "n2": needs a "tileLayer"',
 			'newLayers[2] "n3": "filter" is not an expression filter',
+			'newLayers[3] "n4": a symbol needs a "textField"',
+			'newLayers[4] "n5": "fallbackField" is not a text',
+			'newLayers[4] "n5": "placement" must be point or line',
 		]);
 	});
 
@@ -639,6 +653,45 @@ describe('applyLayerMapping', () => {
 			})
 		).style;
 		expect(ids(hidden)).not.toContain('maritime-eez');
+	});
+
+	it('draws a text label from its field, with the styler font and size in its layout', () => {
+		const mapping = maritimeMapping({
+			newLayers: [
+				eez({ id: 'codes', type: 'symbol', textField: 'ref', fallbackField: 'name' }),
+				eez({ id: 'names', type: 'symbol', textField: 'name', placement: 'line' }),
+			],
+		});
+		const paint = {
+			codes: { 'text-color': '#ff0000', 'text-font': ['noto_sans_bold'], 'text-size': 16 },
+		};
+		const { style } = mapped(mapping, stateWith(mapping), paint);
+		expect(layerOf(style, 'codes')).toEqual({
+			id: 'codes',
+			type: 'symbol',
+			source: 'versatiles-shortbread',
+			'source-layer': 'boundaries',
+			filter: ['==', ['get', 'admin_level'], 2],
+			layout: {
+				'text-field': ['to-string', ['coalesce', ['get', 'ref'], ['get', 'name']]],
+				'text-font': ['noto_sans_bold'],
+				'text-size': 16,
+			},
+			paint: { 'text-color': '#ff0000', 'text-halo-color': '#ffffff', 'text-halo-width': 1.5 },
+		});
+		expect((layerOf(style, 'names') as { layout: unknown }).layout).toEqual({
+			'text-field': ['to-string', ['get', 'name']],
+			'text-font': ['noto_sans_regular'],
+			'text-size': 12,
+			'symbol-placement': 'line',
+		});
+		const half = stateWith(mapping, (layers) => {
+			layers.boundaries.maritime = 0.5;
+		});
+		expect(paintOf(mapped(mapping, half).style, 'names')).toMatchObject({
+			'text-opacity': 0.5,
+			'icon-opacity': 0.5,
+		});
 	});
 
 	it('dims new circle and fill layers, a constant, an expression, clamped', () => {

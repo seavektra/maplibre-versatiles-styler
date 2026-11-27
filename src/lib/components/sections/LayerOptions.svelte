@@ -35,9 +35,16 @@
 	import { groupWarnings, type RoleStatus } from '../../style/role_status';
 	import { offlineLayerId } from '../../style/online';
 	import { belowChartAnchor, DEFAULT_OVER_CHART } from '../../style/chart_anchor';
-	import { DEFAULT_NEW_LAYER_PAINT, type NewStyleLayer } from '../../style/layer_mapping';
 	import {
+		DEFAULT_LABEL_FONT,
+		DEFAULT_LABEL_SIZE,
+		DEFAULT_NEW_LAYER_PAINT,
+		type NewStyleLayer,
+	} from '../../style/layer_mapping';
+	import {
+		LABEL_FONTS,
 		PAINT_FIELDS,
+		type LabelFont,
 		parseLayerPaint,
 		type LayerPaint,
 		type NewLayerStyle,
@@ -122,13 +129,21 @@
 	/** What a new layer is drawn with where its paint sets nothing: its type's default. */
 	function defaultPaint(layer: NewStyleLayer): Required<Omit<NewLayerStyle, 'dash'>> {
 		const paint = DEFAULT_NEW_LAYER_PAINT[layer.type];
+		const prefix = layer.type === 'symbol' ? 'text' : layer.type;
+		const font = Object.entries(LABEL_FONTS).find(([, name]) => name === DEFAULT_LABEL_FONT);
 		return {
-			color: paint[`${layer.type}-color`] as string,
-			opacity: (paint[`${layer.type}-opacity`] as number | undefined) ?? 1,
+			color: paint[`${prefix}-color`] as string,
+			opacity: (paint[`${prefix}-opacity`] as number | undefined) ?? 1,
 			width: (paint['line-width'] as number | undefined) ?? 1,
 			radius: (paint['circle-radius'] as number | undefined) ?? 3,
+			font: (font?.[0] ?? 'regular') as LabelFont,
+			size: DEFAULT_LABEL_SIZE,
+			haloColor: (paint['text-halo-color'] as string | undefined) ?? '#ffffff',
+			haloWidth: (paint['text-halo-width'] as number | undefined) ?? 0,
 		};
 	}
+
+	const FONT_LABELS: Record<LabelFont, string> = { regular: 'Regular', bold: 'Bold' };
 
 	/** Sets one field of a new layer's paint; `undefined` takes it back to the default. */
 	function setPaint<K extends keyof NewLayerStyle>(
@@ -312,8 +327,10 @@
 		? groupLayerSummaries({ layers: styleLayers }, layerGroups, id, offlineLayerId)
 		: []}
 	{@const sources = rolesShown ? roleState?.roles : undefined}
-	{@const added = layerPaint ? newLayersOf(id) : []}
-	{#if summaries.length === 0 && added.length === 0}
+	{@const all = layerPaint ? newLayersOf(id) : []}
+	{@const added = all.filter((layer) => layer.type !== 'symbol')}
+	{@const texts = all.filter((layer) => layer.type === 'symbol')}
+	{#if summaries.length === 0 && all.length === 0}
 		<span>No layers of this group are in the style.</span>
 	{:else if summaries.length === 0}
 		<span>No layers of this group are drawn.</span>
@@ -416,6 +433,100 @@
 								/>
 							{/if}
 						</td>
+					</tr>
+				{/each}
+			</tbody>
+		</table>
+	{/if}
+	{#if texts.length > 0}
+		<!-- The text labels the basemap adds: their font, size, colour and halo. -->
+		<table class="group-info new-layer-paint">
+			<thead
+				><tr
+					><th>New label</th><th>Font</th><th>Size</th><th>Colour</th><th>Halo</th><th
+						>Halo width</th
+					><th>Opacity</th></tr
+				></thead
+			>
+			<tbody>
+				{#each texts as layer (layer.id)}
+					{@const paint = layerPaint?.[layer.id] ?? {}}
+					{@const usual = defaultPaint(layer)}
+					<tr>
+						<td>{layer.id}</td>
+						<td
+							><select
+								aria-label="Font of {layer.id}"
+								{disabled}
+								value={paint.font ?? usual.font}
+								onchange={(e) =>
+									setPaint(layer.id, 'font', (e.target as HTMLSelectElement).value as LabelFont)}
+							>
+								{#each Object.keys(LABEL_FONTS) as LabelFont[] as font (font)}
+									<option value={font}>{FONT_LABELS[font]}</option>
+								{/each}
+							</select></td
+						>
+						<td
+							><input
+								type="number"
+								aria-label="Size of {layer.id}"
+								{disabled}
+								min="1"
+								step="1"
+								value={paint.size ?? usual.size}
+								onchange={(e) => setPaint(layer.id, 'size', numberOf(e))}
+							/></td
+						>
+						<td
+							><input
+								type="color"
+								aria-label="Colour of {layer.id}"
+								{disabled}
+								value={paint.color ?? usual.color}
+								onchange={(e) => setPaint(layer.id, 'color', (e.target as HTMLInputElement).value)}
+							/></td
+						>
+						<td
+							><input
+								type="color"
+								aria-label="Halo colour of {layer.id}"
+								{disabled}
+								value={paint.haloColor ?? usual.haloColor}
+								onchange={(e) =>
+									setPaint(layer.id, 'haloColor', (e.target as HTMLInputElement).value)}
+							/></td
+						>
+						<td
+							><input
+								type="number"
+								aria-label="Halo width of {layer.id}"
+								{disabled}
+								min="0"
+								step="0.5"
+								value={paint.haloWidth ?? usual.haloWidth}
+								onchange={(e) => setPaint(layer.id, 'haloWidth', numberOf(e))}
+							/></td
+						>
+						<td
+							><input
+								type="number"
+								aria-label="Opacity of {layer.id}"
+								{disabled}
+								min="0"
+								max="1"
+								step="0.05"
+								value={paint.opacity ?? usual.opacity}
+								onchange={(e) => {
+									const value = numberOf(e);
+									setPaint(
+										layer.id,
+										'opacity',
+										value === undefined ? undefined : Math.min(1, Math.max(0, value))
+									);
+								}}
+							/></td
+						>
 					</tr>
 				{/each}
 			</tbody>

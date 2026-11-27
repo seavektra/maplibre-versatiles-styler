@@ -59,7 +59,11 @@ export interface LayerMappingGroup {
 	after?: string;
 }
 
-export type NewLayerType = 'fill' | 'line' | 'circle';
+/** `symbol` is a text label: the text of a field of the tile layer's features. */
+export type NewLayerType = 'fill' | 'line' | 'circle' | 'symbol';
+
+/** Where a text label is placed: at the feature's point (a line's or polygon's too), or along a line. */
+export type LabelPlacement = 'point' | 'line';
 
 export interface NewStyleLayer {
 	id: string;
@@ -70,9 +74,18 @@ export interface NewStyleLayer {
 	filter?: FilterSpecification;
 	/** The style layer it draws after; the last layer of its group when left out. */
 	after?: string;
+	/** A text label's text: the field of the feature it shows. Only for `symbol`, which needs it. */
+	textField?: string;
+	/** A text label's text where a feature has no `textField`. Only for `symbol`. */
+	fallbackField?: string;
+	/** A text label's placement; `point` when left out. Only for `symbol`. */
+	placement?: LabelPlacement;
 }
 
-/** Paint properties of a new style layer, set in the styler, by the layer's id. */
+/**
+ * Paint properties of a new style layer, set in the styler, by the layer's id. A text label's font
+ * and size (`text-font`, `text-size`) come here too and are moved to its layout.
+ */
 export type NewLayerPaint = Record<string, Record<string, unknown>>;
 
 /** What a new style layer of each type is drawn with until the styler sets its paint. */
@@ -80,9 +93,23 @@ export const DEFAULT_NEW_LAYER_PAINT: Record<NewLayerType, Record<string, unknow
 	fill: { 'fill-color': '#808080', 'fill-opacity': 0.3 },
 	line: { 'line-color': '#808080', 'line-width': 1 },
 	circle: { 'circle-color': '#808080', 'circle-radius': 3 },
+	symbol: { 'text-color': '#404040', 'text-halo-color': '#ffffff', 'text-halo-width': 1.5 },
 };
 
-const NEW_LAYER_TYPES: readonly NewLayerType[] = ['fill', 'line', 'circle'];
+/** The label font a text label is drawn with until the styler sets one: the theme's regular font. */
+export const DEFAULT_LABEL_FONT = 'noto_sans_regular';
+
+/** The text size a text label is drawn with until the styler sets one, in px. */
+export const DEFAULT_LABEL_SIZE = 12;
+
+/**
+ * The properties of a text label set in the styler that MapLibre reads from `layout`, not `paint`.
+ * They come with the paint (see {@link NewLayerPaint}) and are moved to the layout here.
+ */
+const LABEL_LAYOUT_PROPS: readonly string[] = ['text-font', 'text-size'];
+
+const NEW_LAYER_TYPES: readonly NewLayerType[] = ['fill', 'line', 'circle', 'symbol'];
+const PLACEMENTS: readonly LabelPlacement[] = ['point', 'line'];
 
 type Layer = StyleSpecification['layers'][number];
 type Tree = Record<string, unknown>;
@@ -181,7 +208,7 @@ export function parseLayerMapping(value: unknown): { mapping: LayerMapping; warn
 			continue;
 		}
 		if (!NEW_LAYER_TYPES.includes(entry.type as NewLayerType)) {
-			warnings.push(`${where} "${entry.id}": "type" must be fill, line or circle`);
+			warnings.push(`${where} "${entry.id}": "type" must be fill, line, circle or symbol`);
 			continue;
 		}
 		if (!isText(entry.tileLayer)) {
@@ -200,6 +227,22 @@ export function parseLayerMapping(value: unknown): { mapping: LayerMapping; warn
 		}
 		if (isId(entry.after)) layer.after = entry.after;
 		else if (entry.after !== undefined) warnings.push(`${where} "${entry.id}": bad "after"`);
+		if (layer.type === 'symbol') {
+			if (!isText(entry.textField)) {
+				warnings.push(`${where} "${entry.id}": a symbol needs a "textField"`);
+				continue;
+			}
+			layer.textField = entry.textField;
+			if (isText(entry.fallbackField)) layer.fallbackField = entry.fallbackField;
+			else if (entry.fallbackField !== undefined) {
+				warnings.push(`${where} "${entry.id}": "fallbackField" is not a text`);
+			}
+			if (PLACEMENTS.includes(entry.placement as LabelPlacement)) {
+				layer.placement = entry.placement as LabelPlacement;
+			} else if (entry.placement !== undefined) {
+				warnings.push(`${where} "${entry.id}": "placement" must be point or line`);
+			}
+		}
 		ids.add(entry.id);
 		mapping.newLayers.push(layer);
 	}
@@ -839,15 +882,38 @@ function newLayer(
 	paint: Record<string, unknown> | undefined,
 	value: GroupValue
 ): Layer {
+	const all: Record<string, unknown> = { ...DEFAULT_NEW_LAYER_PAINT[layer.type], ...paint };
 	const result = {
 		id: layer.id,
 		type: layer.type,
 		source,
 		'source-layer': layer.tileLayer,
 		...(layer.filter !== undefined ? { filter: layer.filter } : {}),
-		paint: { ...DEFAULT_NEW_LAYER_PAINT[layer.type], ...paint },
+		...(layer.type === 'symbol' ? { layout: labelLayout(layer, all) } : {}),
+		paint: Object.fromEntries(
+			Object.entries(all).filter(([key]) => !LABEL_LAYOUT_PROPS.includes(key))
+		),
 	} as Layer;
 	return dimmed(result, value);
+}
+
+/**
+ * A text label's layout: its text from `textField`, else `fallbackField`; the font and size from
+ * `props` (the paint set in the styler) or the defaults; along lines for a `line` placement.
+ */
+function labelLayout(
+	layer: NewStyleLayer,
+	props: Record<string, unknown>
+): Record<string, unknown> {
+	const text: unknown[] = ['get', layer.textField ?? 'name'];
+	return {
+		'text-field': layer.fallbackField
+			? ['to-string', ['coalesce', text, ['get', layer.fallbackField]]]
+			: ['to-string', text],
+		'text-font': props['text-font'] ?? [DEFAULT_LABEL_FONT],
+		'text-size': props['text-size'] ?? DEFAULT_LABEL_SIZE,
+		...(layer.placement === 'line' ? { 'symbol-placement': 'line' } : {}),
+	};
 }
 
 /** The layer types that take a `filter`. */

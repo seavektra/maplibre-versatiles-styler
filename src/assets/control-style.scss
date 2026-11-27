@@ -1460,9 +1460,14 @@ $chevron-down: "%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E
 		.new-layer-paint {
 			margin-top: 6px;
 
-			input {
+			input,
+			select {
 				width: 5em;
 				font: inherit;
+			}
+
+			select {
+				width: auto;
 			}
 
 			input[type='color'] {

@@ -86,6 +86,22 @@ describe('mapping edits', () => {
 		expect(resetLayerFilter(mapping, 'boundary-state').filters).toEqual({});
 	});
 
+	it('adds a text label with its fields and placement, and drops them from other types', () => {
+		const label = {
+			group: 'boundaries.maritime',
+			tileLayer: 'boundaries',
+			textField: 'ref',
+			fallbackField: 'name',
+			placement: 'line' as const,
+		};
+		let mapping = addNewLayer(maritime(), { ...label, id: 'codes', type: 'symbol' });
+		mapping = addNewLayer(mapping, { ...label, id: 'eez', type: 'line' });
+		expect(mapping.newLayers).toEqual([
+			{ ...label, id: 'codes', type: 'symbol' },
+			{ id: 'eez', group: 'boundaries.maritime', type: 'line', tileLayer: 'boundaries' },
+		]);
+	});
+
 	it('sets the filter of a new layer on its entry', () => {
 		let mapping = addNewLayer(maritime(), {
 			id: 'eez',
