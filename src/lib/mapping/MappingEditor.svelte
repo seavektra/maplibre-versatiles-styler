@@ -1213,7 +1213,15 @@
 				<label>
 					Tile layer
 					{#if tileLayers.length > 0}
-						<select bind:value={p.tileLayer}>
+						<select
+							bind:value={p.tileLayer}
+							onchange={() => {
+								// The field shown so far may not be in the tile layer picked now.
+								const now = tileLayerFields(tileJSON, [p.tileLayer]);
+								if (!(p.textField in now)) p.textField = usualTextField(now);
+								if (p.fallbackField !== '' && !(p.fallbackField in now)) p.fallbackField = '';
+							}}
+						>
 							{#if !tileLayers.includes(p.tileLayer)}
 								<option value={p.tileLayer} disabled>{p.tileLayer || 'Pick a tile layer…'}</option>
 							{/if}
