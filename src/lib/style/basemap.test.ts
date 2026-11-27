@@ -92,6 +92,15 @@ describe('parseLayerPaint', () => {
 		).toEqual({ a: { color: '#ff0000', width: 2, opacity: 1, dash: [2, 1], radius: 4 } });
 		expect(parseLayerPaint(null)).toEqual({});
 	});
+
+	it("keeps a text label's font, size and halo", () => {
+		expect(
+			parseLayerPaint({
+				a: { font: 'bold', size: 14, haloColor: '#000000', haloWidth: 2 },
+				b: { font: 'comic', size: 0, haloColor: '', haloWidth: -1 },
+			})
+		).toEqual({ a: { font: 'bold', size: 14, haloColor: '#000000', haloWidth: 2 } });
+	});
 });
 
 describe('newLayerPaint', () => {
@@ -99,11 +108,22 @@ describe('newLayerPaint', () => {
 		{ id: 'l', group: 'g', type: 'line', tileLayer: 't' },
 		{ id: 'f', group: 'g', type: 'fill', tileLayer: 't' },
 		{ id: 'c', group: 'g', type: 'circle', tileLayer: 't' },
+		{ id: 's', group: 'g', type: 'symbol', tileLayer: 't', textField: 'ref' },
 	];
 
 	it('gives each type the fields it takes, and nothing to layers the mapping does not have', () => {
-		const style = { color: '#123456', width: 2, opacity: 0.5, dash: [1, 1], radius: 5 };
-		expect(newLayerPaint({ l: style, f: style, c: style, gone: style }, layers)).toEqual({
+		const style = {
+			color: '#123456',
+			width: 2,
+			opacity: 0.5,
+			dash: [1, 1],
+			radius: 5,
+			font: 'bold' as const,
+			size: 14,
+			haloColor: '#ffffff',
+			haloWidth: 1,
+		};
+		expect(newLayerPaint({ l: style, f: style, c: style, s: style, gone: style }, layers)).toEqual({
 			l: {
 				'line-color': '#123456',
 				'line-opacity': 0.5,
@@ -112,6 +132,14 @@ describe('newLayerPaint', () => {
 			},
 			f: { 'fill-color': '#123456', 'fill-opacity': 0.5 },
 			c: { 'circle-color': '#123456', 'circle-opacity': 0.5, 'circle-radius': 5 },
+			s: {
+				'text-color': '#123456',
+				'text-opacity': 0.5,
+				'text-font': ['noto_sans_bold'],
+				'text-size': 14,
+				'text-halo-color': '#ffffff',
+				'text-halo-width': 1,
+			},
 		});
 		expect(keptLayerPaint({ l: style, gone: style }, layers)).toEqual({ l: style });
 	});

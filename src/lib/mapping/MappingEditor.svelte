@@ -19,6 +19,7 @@
 	import {
 		groupOfLayer,
 		parseLayerMapping,
+		type LabelPlacement,
 		type LayerMapping,
 		type NewLayerType,
 		type NewStyleLayer,
@@ -360,6 +361,11 @@
 		if (!applied) return [];
 		const tags: string[] = [];
 		if (newLayers.has(id)) tags.push('new style layer');
+		const label = newLayers.get(id);
+		if (label?.type === 'symbol') {
+			const text = [label.textField, label.fallbackField].filter(Boolean).join(' or ');
+			tags.push(`text: ${text}`);
+		}
 		if (owns(applied.moves, id)) tags.push('moved');
 		if (owns(applied.filters, id)) tags.push('filter');
 		return tags;
@@ -403,6 +409,10 @@
 				tileLayer: string;
 				after: string;
 				drafts: RowDraft[];
+				/** A text label's field, its fallback field (`''` for none) and its placement. */
+				textField: string;
+				fallbackField: string;
+				placement: LabelPlacement;
 		  }
 		| { kind: 'rawOnly'; what: string };
 
@@ -487,7 +497,16 @@
 			tileLayer: (ids.map(tileLayerOf).find(Boolean) ?? tileLayers[0] ?? '') as string,
 			after: '',
 			drafts: [],
+			textField: '',
+			fallbackField: '',
+			placement: 'point',
 		};
+	}
+
+	/** The field a text label shows when the form opens on it: `name` if the tile layer has it. */
+	function usualTextField(fields: Record<string, FieldType>): string {
+		const names = Object.keys(fields);
+		return names.includes('name') ? 'name' : (names[0] ?? '');
 	}
 
 	function openNewGroup(parent: string, moveId?: string) {
@@ -568,6 +587,7 @@
 		if (id === '') return 'Give the layer an id';
 		if (themeLayers.has(id) || newLayers.has(id)) return `"${id}" exists already`;
 		if (p.tileLayer.trim() === '') return 'Pick a tile layer';
+		if (p.type === 'symbol' && p.textField.trim() === '') return 'Pick the field the label shows';
 		return undefined;
 	}
 
@@ -581,6 +601,13 @@
 			tileLayer: p.tileLayer.trim(),
 			...(filter ? { filter } : {}),
 			...(p.after ? { after: p.after } : {}),
+			...(p.type === 'symbol'
+				? {
+						textField: p.textField.trim(),
+						...(p.fallbackField.trim() ? { fallbackField: p.fallbackField.trim() } : {}),
+						...(p.placement === 'line' ? { placement: 'line' as const } : {}),
+					}
+				: {}),
 		};
 		commit(addNewLayer(mapping, layer));
 		panel = undefined;
@@ -1171,16 +1198,30 @@
 				<label>Id <input type="text" bind:value={p.id} /></label>
 				<label>
 					Type
-					<select bind:value={p.type}>
+					<select
+						bind:value={p.type}
+						onchange={() => {
+							if (p.type === 'symbol' && p.textField === '') p.textField = usualTextField(fields);
+						}}
+					>
 						<option value="fill">fill</option>
 						<option value="line">line</option>
 						<option value="circle">circle</option>
+						<option value="symbol">text label</option>
 					</select>
 				</label>
 				<label>
 					Tile layer
 					{#if tileLayers.length > 0}
-						<select bind:value={p.tileLayer}>
+						<select
+							bind:value={p.tileLayer}
+							onchange={() => {
+								// The field shown so far may not be in the tile layer picked now.
+								const now = tileLayerFields(tileJSON, [p.tileLayer]);
+								if (!(p.textField in now)) p.textField = usualTextField(now);
+								if (p.fallbackField !== '' && !(p.fallbackField in now)) p.fallbackField = '';
+							}}
+						>
 							{#if !tileLayers.includes(p.tileLayer)}
 								<option value={p.tileLayer} disabled>{p.tileLayer || 'Pick a tile layer…'}</option>
 							{/if}
@@ -1201,6 +1242,44 @@
 						{/each}
 					</select>
 				</label>
+				{#if p.type === 'symbol'}
+					{@const names = Object.keys(fields)}
+					<label>
+						Text from
+						{#if names.length > 0}
+							<select bind:value={p.textField}>
+								{#if !names.includes(p.textField)}
+									<option value={p.textField} disabled>{p.textField || 'Pick a field…'}</option>
+								{/if}
+								{#each names as name (name)}
+									<option value={name}>{name}</option>
+								{/each}
+							</select>
+						{:else}
+							<input type="text" bind:value={p.textField} />
+						{/if}
+					</label>
+					<label>
+						Else from
+						{#if names.length > 0}
+							<select bind:value={p.fallbackField}>
+								<option value="">No other field</option>
+								{#each names.filter((name) => name !== p.textField) as name (name)}
+									<option value={name}>{name}</option>
+								{/each}
+							</select>
+						{:else}
+							<input type="text" bind:value={p.fallbackField} placeholder="none" />
+						{/if}
+					</label>
+					<label>
+						Placement
+						<select bind:value={p.placement}>
+							<option value="point">at the point</option>
+							<option value="line">along lines</option>
+						</select>
+					</label>
+				{/if}
 			</div>
 			<FilterRowsEditor
 				bind:drafts={p.drafts}

@@ -204,6 +204,11 @@ export function addNewLayer(mapping: LayerMapping, layer: NewStyleLayer): LayerM
 	};
 	if (layer.filter !== undefined) entry.filter = structuredClone(layer.filter);
 	if (layer.after) entry.after = layer.after;
+	if (layer.type === 'symbol') {
+		entry.textField = layer.textField;
+		if (layer.fallbackField) entry.fallbackField = layer.fallbackField;
+		if (layer.placement === 'line') entry.placement = 'line';
+	}
 	next.newLayers.push(entry);
 	return next;
 }

@@ -41,9 +41,18 @@ export const METADATA_LAYER_PAINT_KEY = 'seavektra:layerPaint';
 /** Where an exported style records the settings of the mapping's new groups. */
 export const METADATA_NEW_GROUPS_KEY = 'seavektra:newGroups';
 
+/** The label fonts a text label can have: the theme's own, which the app export maps to its fonts. */
+export const LABEL_FONTS = {
+	regular: 'noto_sans_regular',
+	bold: 'noto_sans_bold',
+} as const;
+
+export type LabelFont = keyof typeof LABEL_FONTS;
+
 /**
  * The paint of a new style layer as the styler edits it. Which fields count depends on the layer's
- * type: a fill has a colour and an opacity, a line also a width and a dash, a circle a radius.
+ * type: a fill has a colour and an opacity, a line also a width and a dash, a circle a radius, a
+ * text label a font, a size and a halo.
  */
 export interface NewLayerStyle {
 	color?: string;
@@ -52,6 +61,13 @@ export interface NewLayerStyle {
 	/** A line's dash pattern, as `line-dasharray`. */
 	dash?: number[];
 	radius?: number;
+	/** A text label's font. */
+	font?: LabelFont;
+	/** A text label's size in px. */
+	size?: number;
+	haloColor?: string;
+	/** A text label's halo width in px. */
+	haloWidth?: number;
 }
 
 /** The paint of the mapping's new style layers, by layer id. */
@@ -62,6 +78,7 @@ export const PAINT_FIELDS: Record<NewStyleLayer['type'], (keyof NewLayerStyle)[]
 	fill: ['color', 'opacity'],
 	line: ['color', 'width', 'opacity', 'dash'],
 	circle: ['color', 'radius', 'opacity'],
+	symbol: ['color', 'font', 'size', 'haloColor', 'haloWidth', 'opacity'],
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -81,6 +98,17 @@ export function parseLayerPaint(value: unknown): LayerPaint {
 		if (isNumber(entry.width) && entry.width >= 0) style.width = entry.width;
 		if (isNumber(entry.opacity)) style.opacity = Math.min(1, Math.max(0, entry.opacity));
 		if (isNumber(entry.radius) && entry.radius >= 0) style.radius = entry.radius;
+		if (
+			typeof entry.font === 'string' &&
+			Object.prototype.hasOwnProperty.call(LABEL_FONTS, entry.font)
+		) {
+			style.font = entry.font as LabelFont;
+		}
+		if (isNumber(entry.size) && entry.size > 0) style.size = entry.size;
+		if (typeof entry.haloColor === 'string' && entry.haloColor !== '') {
+			style.haloColor = entry.haloColor;
+		}
+		if (isNumber(entry.haloWidth) && entry.haloWidth >= 0) style.haloWidth = entry.haloWidth;
 		if (Array.isArray(entry.dash) && entry.dash.length > 0 && entry.dash.every(isNumber)) {
 			style.dash = entry.dash.filter((n) => n >= 0);
 		}
@@ -101,7 +129,7 @@ export function newLayerPaint(paint: LayerPaint, layers: readonly NewStyleLayer[
 			: undefined;
 		if (!style) continue;
 		const out: Record<string, unknown> = {};
-		const prefix = layer.type;
+		const prefix = layer.type === 'symbol' ? 'text' : layer.type;
 		if (style.color !== undefined) out[`${prefix}-color`] = style.color;
 		if (style.opacity !== undefined) out[`${prefix}-opacity`] = style.opacity;
 		if (layer.type === 'line') {
@@ -109,6 +137,12 @@ export function newLayerPaint(paint: LayerPaint, layers: readonly NewStyleLayer[
 			if (style.dash !== undefined) out['line-dasharray'] = style.dash;
 		}
 		if (layer.type === 'circle' && style.radius !== undefined) out['circle-radius'] = style.radius;
+		if (layer.type === 'symbol') {
+			if (style.font !== undefined) out['text-font'] = [LABEL_FONTS[style.font]];
+			if (style.size !== undefined) out['text-size'] = style.size;
+			if (style.haloColor !== undefined) out['text-halo-color'] = style.haloColor;
+			if (style.haloWidth !== undefined) out['text-halo-width'] = style.haloWidth;
+		}
 		if (Object.keys(out).length > 0) result[layer.id] = out;
 	}
 	return result;
